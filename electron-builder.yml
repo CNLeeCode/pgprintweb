@@ -1,0 +1,36 @@
+appId: com.pgprint.app
+productName: pgprinter
+copyright: 2025 BUTCOMPANY
+# 跳过原生模块重编译：macOS 上 node-gyp 编译 serialport/usb 会因 SDK 不兼容失败。
+# serialport/usb 自带 win32-x64 prebuilds，直接拷贝即可在 Windows 运行。
+# @thiagoelg/node-printer 无 prebuilds，Windows 上懒加载失败自动回退 PowerShell RawPrinter。
+npmRebuild: false
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - "node_modules/**/*"
+extraResources:
+  - from: resources/
+    to: resources/
+asarUnpack:
+  - "**/*.{node,dll}"
+win:
+  target: nsis
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  # Win7 兼容：不使用 differentialDownload 增量更新
+nsis:
+  # 方案 B：一键安装，不问目录，门店人员双击即装
+  oneClick: true
+  perMachine: true
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: pgprinter
+  uninstallDisplayName: pgprinter
+  # 安装完成后自动启动应用
+  runAfterFinish: true
+# 方案 B：不再使用 electron-updater，无需 publish 配置
+# 下载地址由后端 getAppUpdateInfo 接口返回，发版只需把 exe 丢到静态目录 + 改接口返回

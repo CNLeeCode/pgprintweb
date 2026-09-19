@@ -1,0 +1,101 @@
+# =============================================================================
+# GitHub Actions: 构建 Windows NSIS 安装包（Win7 兼容）
+# =============================================================================
+#
+# 为什么用 GitHub Actions 而非本地打包：
+#   macOS 上交叉编译 Windows nsis 包需要 wine，而本机 brew 4.1.19 不兼容
+#   macOS 26.3（版本号正则 bug），装不了 wine。
+#   GitHub Actions 的 windows-latest runner 原生 Windows 环境，自带 NSIS，
+#   无需 wine，打出来的包和真机 Windows 完全一致。
+#
+# 使用方式：
+#   1. git push 到 GitHub
+#   2. GitHub 仓库 → Actions 标签页 → "Build Windows Installer (Win7 兼容)"
+#   3. 点 "Run workflow"，输入版本号 JSON 数组（默认 ["1.0.0","1.0.1"]）
+#   4. 等待构建完成（约 5-10 分钟），在 Artifacts 区域下载两个 exe
+#
+# 产物：
+#   release/pgprinter Setup {version}.exe — NSIS 一键安装包
+#   1.0.0 用于初次安装，1.0.1 用于测试升级流程
+#
+# Win7 兼容性：
+#   Electron 22.3.27（Chromium 108，最后支持 Win7/8/8.1 的版本）
+#   原生模块 serialport/usb 自带 win32-x64 prebuilds，无需 electron-rebuild
+# =============================================================================
+
+name: Build Windows Installer (Win7 兼容)
+
+on:
+  # 手动触发：在 GitHub Actions 页面点 "Run workflow"
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: '要构建的版本号（JSON 数组，如 ["1.0"] 或 ["1.0","1.0.1"]）'
+        required: true
+        default: '["1.0"]'
+
+jobs:
+  build:
+    name: Build v${{ matrix.version }}
+    runs-on: windows-latest
+    strategy:
+      # 单个版本失败不影响其他版本构建
+      fail-fast: false
+      matrix:
+        # 从输入解析版本号数组，每个版本一个并行 job
+        version: ${{ fromJSON(github.event.inputs.versions) }}
+
+    steps:
+      # ----- 1. 拉取代码 -----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----- 2. 安装 Node.js -----
+      # Electron 22.3.27 对应 Node 16.17.1，用 16 构建 ABI 完全匹配
+      # （若 16 不可用可降级 18，构建环境 Node 版本不影响 Electron 内嵌 ABI）
+      - name: Setup Node.js 16
+        uses: actions/setup-node@v4
+        with:
+          node-version: '16'
+          cache: 'npm'
+
+      # ----- 3. 设置 package.json 版本号 -----
+      # electron-builder 读 package.json 的 version 字段命名输出文件
+      # npm version 自动改 version 字段，--no-git-tag-version 防止自动建 tag
+      - name: Set package.json version
+        run: npm version ${{ matrix.version }} --no-git-tag-version
+
+      # ----- 4. 安装依赖 -----
+      # 用 npm install 而非 npm ci，避免 @thiagoelg/node-printer 等
+      # 原生模块编译差异导致严格模式安装失败
+      - name: Install dependencies
+        run: npm install
+
+      # ----- 5. 构建 + 打包 NSIS -----
+      # npm run build:win = electron-vite build && electron-builder --win --nsis
+      # VITE_APP_VERSION 环境变量覆盖 .env.production 的值，注入到 config.ts
+      # 优先级：环境变量 > .env.production > .env，确保版本号正确
+      - name: Build & Package (NSIS)
+        run: npm run build:win
+        env:
+          VITE_APP_VERSION: ${{ matrix.version }}
+
+      # ----- 6. 上传安装包 -----
+      # electron-builder 输出到 release/ 目录，文件名 pgprinter Setup {version}.exe
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgprint-win-${{ matrix.version }}
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      # ----- 7. 输出构建信息 -----
+      - name: Build info
+        run: |
+          echo "============================================"
+          echo "Version: ${{ matrix.version }}"
+          echo "Electron: 22.3.27 (Win7 兼容)"
+          echo "Target: NSIS oneClick installer"
+          echo "============================================"
+          dir release\*.exe

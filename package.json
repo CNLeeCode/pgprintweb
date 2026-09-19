@@ -1,0 +1,50 @@
+{
+  "name": "pgprint-electron",
+  "version": "1.0.0",
+  "description": "比优特到家小票打印系统 (Electron Win7 兼容版)",
+  "author": "BUTCOMPANY",
+  "license": "MIT",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "rebuild": "electron-rebuild -f -w serialport,usb",
+    "build:win": "npm run build && electron-builder --win --nsis",
+    "build:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.4",
+    "@emotion/styled": "^11.11.5",
+    "@mui/icons-material": "^6.1.6",
+    "@mui/material": "^6.1.6",
+    "@mui/x-date-pickers": "^7.18.0",
+    "axios": "^1.7.7",
+    "bwip-js": "^4.3.0",
+    "@thiagoelg/node-printer": "^4.2.1",
+    "electron-log": "^5.1.7",
+    "electron-store": "^8.2.0",
+    
+    "iconv-lite": "^0.6.3",
+    "node-thermal-printer": "^4.5.0",
+    "pngjs": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "serialport": "^12.0.0",
+    "usb": "^2.12.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@types/node": "^18.19.55",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "22.3.27",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}
