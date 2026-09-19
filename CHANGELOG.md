@@ -1,5 +1,26 @@
 # 变更日志
 
+## [1.0.11] - 2026-09-19
+
+### 性能：缓存 Electron / electron-builder 下载产物，CI 构建提速
+
+#### 背景
+每次 CI 构建，electron-builder 都要从 GitHub releases 下载：
+- `electron-v22.3.27-win32-x64.zip`（~97 MB）
+- `winCodeSign` / `nsis` / `nsis-resources`（合计 ~30 MB）
+
+GitHub Actions Windows runner → github.com 走外网，网速不稳，最差几分钟下不完。
+
+#### 解法
+加 `actions/cache@v4` 缓存 Electron 和 electron-builder 的本地下载缓存目录。
+通过 `ELECTRON_CACHE` / `ELECTRON_BUILDER_CACHE` 环境变量把缓存目录固定到
+D 盘（C 盘空间紧张），保证路径稳定可缓存。key 含 Electron 版本号，
+Electron 升级时自动失效重下。
+
+#### 效果
+- 首次：仍需下载一次（~127 MB）
+- 后续：缓存命中跳过下载，省 ~20-60 秒（取决于网络情况）
+
 ## [1.0.10] - 2026-09-19
 
 ### 修复：electron-builder.yml `publish: never` 被当成自定义 publisher 模块名崩溃

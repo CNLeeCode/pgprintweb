@@ -39,6 +39,14 @@ jobs:
   build:
     name: Build v${{ matrix.version }}
     runs-on: windows-latest
+    # ELECTRON_CACHE / ELECTRON_BUILDER_CACHE 是 electron 和 electron-builder
+    # 共同尊重的环境变量，把缓存目录固定到 D 盘（见下方 cache 步骤说明）。
+    # 这样：
+    #   1. actions/cache 缓存的路径与环境变量一致
+    #   2. electron-builder 下载时会自动复用缓存
+    env:
+      ELECTRON_CACHE: D:\electron-cache
+      ELECTRON_BUILDER_CACHE: D:\electron-builder-cache
     strategy:
       # 单个版本失败不影响其他版本构建
       fail-fast: false
@@ -61,6 +69,27 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      # ----- 2.5 缓存 Electron / electron-builder 下载产物 -----
+      # 慢点根因：electron-builder 每次都要从 GitHub releases 下载
+      #   - electron-v22.3.27-win32-x64.zip (~97 MB)
+      #   - winCodeSign / nsis / nsis-resources（每次几个~十几个 MB）
+      # GitHub Actions Windows runner → github.com/electron/electron/releases 走外网，
+      # 网速不稳定时几分钟下不完。
+      #
+      # 解法：用 actions/cache 命中本地缓存后秒过，只有 Electron 版本号变了才重下。
+      # 通过 ELECTRON_CACHE / ELECTRON_BUILDER_CACHE 环境变量把缓存目录固定到 D 盘
+      # （C 盘空间紧张，Windows runner D 盘有 ~10 GB 富余），保证路径稳定可缓存。
+      # key 含 Electron 版本号 + runner OS，版本一升级自动失效重下。
+      - name: Cache Electron & electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            D:\electron-cache
+            D:\electron-builder-cache
+          key: ${{ runner.os }}-electron-22.3.27-v1
+          restore-keys: |
+            ${{ runner.os }}-electron-
 
       # ----- 3. 规范化版本号 -----
       # npm version 要求三段式 semver（1.0.0），用户输入 "1.0" 会报错
