@@ -9,12 +9,15 @@ GitHub Actions Windows runner → github.com/electron/electron/releases 走外�
 首次下载 Electron (~97 MB) 和 winCodeSign/nsis (~30 MB) 网速不稳，最差几分钟。
 
 #### 解法（首次 + 二次双重提速）
-1. **ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 环境变量**
-   把下载源从 GitHub releases 切到 npmmirror 镜像（原淘宝镜像），CDN 稳定，
-   首次下载也能跑满带宽。
-   - `ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`
-   - `ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/`
-2. **actions/cache** 缓存 ELECTRON_CACHE / ELECTRON_BUILDER_CACHE 目录（D 盘），
+1. **`.npmrc` 镜像配置**（项目根目录，最可靠）
+   `@electron/get` 在 electron-builder 24.x 内部 spawn 子进程下载时，环境变量
+   偶尔因继承问题丢失，`.npmrc` 是 `@electron/get` 的一等配置源。同时对
+   `npm install` 阶段（electron 包 postinstall 下载二进制）也生效。
+   - `electron_mirror=https://registry.npmmirror.com/-/binary/electron/`
+   - `electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/`
+2. **ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 环境变量**（双保险）
+   与 `.npmrc` 同值，确保打包阶段子进程也能拿到镜像地址。
+3. **actions/cache** 缓存 ELECTRON_CACHE / ELECTRON_BUILDER_CACHE 目录（D 盘），
    二次构建命中缓存跳过下载。
 
 #### 效果
