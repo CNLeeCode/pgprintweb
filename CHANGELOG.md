@@ -1,5 +1,33 @@
 # 变更日志
 
+## [1.0.10] - 2026-09-19
+
+### 修复：electron-builder.yml `publish: never` 被当成自定义 publisher 模块名崩溃
+
+#### 背景
+1.0.9 用 `publish: never` 试图禁止 CI 自动 publish，结果反而崩在打包阶段：
+```
+Error: Cannot find module '...build\electron-publisher-never.js'
+  at requireProviderClass (PublishManager.ts:348)
+```
+
+#### 根因
+`never` 只是 `--publish` **CLI 选项**的合法取值（`--help` 中
+`[choices: "onTag", "onTagOrDraft", "always", "never", undefined]`），
+但 yml 里的 `publish` 字段期望的是 **provider 配置对象**（如
+`{provider: "github", owner, repo}`）或 provider 名字符串（github/s3/generic…）。
+写成 `publish: never` 后，electron-builder 把字符串 "never" 当作自定义 publisher
+模块名，去 `build/electron-publisher-never.js` 加载，找不到就 MODULE_NOT_FOUND 崩溃。
+
+#### 变更
+- `electron-builder.yml`：删除 `publish: never`，加备注说明为何不能写在 yml
+- `package.json` `build:win`：`electron-builder --win` → `electron-builder --win --publish never`
+- `.github/workflows/build-windows.yml`：步骤 7 注释同步说明 `--publish never` 用途与陷阱
+
+#### 影响
+- CI 打包后不再触发 publish 流程，`release/*.exe` 可被 `upload-artifact` 正常上传
+- 不再因 `electron-publisher-never.js` MODULE_NOT_FOUND 中断构建
+
 ## [1.0.9] - 2026-09-19
 
 ### 修复：CI 打包成功后 electron-builder 自动 publish 失败中断构建

@@ -100,9 +100,14 @@ jobs:
         run: npm run rebuild
 
       # ----- 7. 构建 + 打包 NSIS -----
-      # npm run build:win = electron-vite build && electron-builder --win
-      # nsis target 在 electron-builder.yml 的 win.target 中指定，无需命令行传 --nsis
-      # （--nsis 不是 electron-builder 的有效参数，会让其打印 help 后退出）
+      # npm run build:win = electron-vite build && electron-builder --win --publish never
+      #   --win：指定目标平台（Windows），nsis target 在 electron-builder.yml 的 win.target 中
+      #          配置；不再用 --nsis（不是合法参数，会让 electron-builder 打印 help 退出）
+      #   --publish never：禁止 electron-builder 自动发布到 GitHub Release。
+      #          CI 环境下 electron-builder 会因 reason=CI detected 自动尝试 publish，
+      #          缺 GH_TOKEN 时报错中断。本项目用 actions/upload-artifact 上传产物。
+      #          注意：never 必须走 CLI，yml 的 publish 字段期望 provider 配置对象，
+      #          写 `publish: never` 会把 "never" 当自定义 publisher 模块名导致崩溃。
       # VITE_APP_VERSION 环境变量覆盖 .env.production 的值，注入到 config.ts
       # 优先级：环境变量 > .env.production > .env，确保版本号正确
       # 用规范化后的三段式版本号，与 package.json version 保持一致
