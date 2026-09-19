@@ -2,24 +2,24 @@
 
 ## [1.0.11] - 2026-09-19
 
-### 性能：缓存 Electron / electron-builder 下载产物，CI 构建提速
+### 性能：Electron/electron-builder 走 npmmirror 镜像 + 缓存双提速
 
 #### 背景
-每次 CI 构建，electron-builder 都要从 GitHub releases 下载：
-- `electron-v22.3.27-win32-x64.zip`（~97 MB）
-- `winCodeSign` / `nsis` / `nsis-resources`（合计 ~30 MB）
+GitHub Actions Windows runner → github.com/electron/electron/releases 走外网，
+首次下载 Electron (~97 MB) 和 winCodeSign/nsis (~30 MB) 网速不稳，最差几分钟。
 
-GitHub Actions Windows runner → github.com 走外网，网速不稳，最差几分钟下不完。
-
-#### 解法
-加 `actions/cache@v4` 缓存 Electron 和 electron-builder 的本地下载缓存目录。
-通过 `ELECTRON_CACHE` / `ELECTRON_BUILDER_CACHE` 环境变量把缓存目录固定到
-D 盘（C 盘空间紧张），保证路径稳定可缓存。key 含 Electron 版本号，
-Electron 升级时自动失效重下。
+#### 解法（首次 + 二次双重提速）
+1. **ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 环境变量**
+   把下载源从 GitHub releases 切到 npmmirror 镜像（原淘宝镜像），CDN 稳定，
+   首次下载也能跑满带宽。
+   - `ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`
+   - `ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/`
+2. **actions/cache** 缓存 ELECTRON_CACHE / ELECTRON_BUILDER_CACHE 目录（D 盘），
+   二次构建命中缓存跳过下载。
 
 #### 效果
-- 首次：仍需下载一次（~127 MB）
-- 后续：缓存命中跳过下载，省 ~20-60 秒（取决于网络情况）
+- 首次：从 npmmirror 拉，比 GitHub releases 快且稳定
+- 后续：缓存命中秒过，省 ~20-60 秒
 
 ## [1.0.10] - 2026-09-19
 

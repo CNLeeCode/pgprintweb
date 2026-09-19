@@ -22,6 +22,10 @@
 # Win7 兼容性：
 #   Electron 22.3.27（Chromium 108，最后支持 Win7/8/8.1 的版本）
 #   原生模块 serialport/usb 自带 win32-x64 prebuilds，无需 electron-rebuild
+#
+# 下载提速：
+#   Electron 二进制 + electron-builder binaries 通过 npmmirror 镜像下载，
+#   配合 actions/cache 二次构建直接命中缓存。
 # =============================================================================
 
 name: Build Windows Installer (Win7 兼容)
@@ -44,9 +48,19 @@ jobs:
     # 这样：
     #   1. actions/cache 缓存的路径与环境变量一致
     #   2. electron-builder 下载时会自动复用缓存
+    #
+    # ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR：把下载源从
+    # github.com/electron/electron/releases 切到 npmmirror 镜像（原淘宝镜像），
+    # 跨国访问 CDN 稳定，首次下载也能跑满带宽。
+    #   - ELECTRON_MIRROR：@electron/get 读取，影响 Electron 二进制下载
+    #   - ELECTRON_BUILDER_BINARIES_MIRROR：electron-builder 读取，影响
+    #     winCodeSign / nsis / nsis-resources 等 binaries 下载
+    # 配合下方 actions/cache，二次构建直接命中缓存秒过。
     env:
       ELECTRON_CACHE: D:\electron-cache
       ELECTRON_BUILDER_CACHE: D:\electron-builder-cache
+      ELECTRON_MIRROR: https://registry.npmmirror.com/-/binary/electron/
+      ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
     strategy:
       # 单个版本失败不影响其他版本构建
       fail-fast: false
