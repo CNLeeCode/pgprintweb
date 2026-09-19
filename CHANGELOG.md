@@ -1,5 +1,26 @@
 # 变更日志
 
+## [1.0.5] - 2026-09-19
+
+### 修复：CI 依赖版本声明错误导致 npm install 失败
+
+#### 背景
+GitHub Actions 构建在 `npm install` 步骤报错：
+`npm error code ETARGET No matching version found for @thiagoelg/node-printer@^4.2.1`
+原因：`@thiagoelg/node-printer` 在 npm 上最新版本为 `0.6.2`，根本不存在 `4.2.1`。同时 `better-sqlite3` 依赖此前遗漏未声明，`rebuild` 脚本也未将其列入 electron-rebuild 编译白名单。
+
+#### 变更
+- `package.json`：
+  - `@thiagoelg/node-printer` 版本 `^4.2.1` → `^0.6.2`（修正为 npm 实际存在的 latest 版本）
+  - 新增 `better-sqlite3@^12.0.0` 依赖（原先遗漏，主进程 DatabaseService 依赖它）
+  - `rebuild` 脚本：`electron-rebuild -f -w serialport,usb` → `... serialport,usb,better-sqlite3`（补入 better-sqlite3 针对 Electron 22 ABI 重编译）
+- `.github/workflows/build-windows.yml`：注释同步说明 `@thiagoelg/node-printer` 不列入 electron-rebuild（代码已 try-require 降级，编译失败不拖垮 rebuild）
+
+#### 影响
+- CI `npm install` 恢复正常
+- 运行时：better-sqlite3 经 electron-rebuild 后可在 Electron 22 ABI 下正常加载，避免 `Module version mismatch` 崩溃
+- `@thiagoelg/node-printer` 维持 try-require 降级策略，编译失败不影响主流程
+
 ## [1.0.4] - 2026-09-19
 
 ### 新增：GitHub Actions CI 构建 Windows NSIS 安装包
