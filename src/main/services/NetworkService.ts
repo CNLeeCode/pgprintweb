@@ -34,7 +34,9 @@ class NetworkServiceImpl extends EventEmitter {
       const res = await axios.head(DOMAIN_URL, {
         timeout: NETWORK_CHECK_TIMEOUT,
         maxRedirects: 5,
-        validateStatus: (s) => (s >= 200 && s < 300) || s === 401
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 401,
+        // 显式禁用代理（与 ApiService 保持一致，详见 ApiService.ts 注释）
+        proxy: false
       })
       const ok = (res.status >= 200 && res.status < 300) || res.status === 401
       return {

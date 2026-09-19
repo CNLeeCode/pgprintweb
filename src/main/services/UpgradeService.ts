@@ -83,10 +83,15 @@ class UpgradeServiceImpl extends EventEmitter {
 
     const res = await ApiService.getAppUpdateInfo()
     if (!res) {
-      // 接口请求失败：降级按"已最新"处理，不阻断启动
-      log.warn('升级检查：接口请求失败，降级跳过')
-      this.setStatus('idle')
-      this.emit('update-not-available', null)
+      // 接口请求失败（网络/DNS/代理问题）：广播 error 让用户看到错误
+      // 不能静默降级——如果是 DNS/代理问题，所有接口都会失败，
+      // 用户会觉得"应用坏了"却不知从何查起，必须把错误暴露在 Splash 上。
+      // 业务层降级（接口返回非200）走下方分支，不阻断启动。
+      const detail = await ApiService.diagnoseNetwork()
+      const msg = `后端接口请求失败\n${detail}`
+      log.error('升级检查：接口请求失败\n', detail)
+      this.setStatus('error')
+      this.emit('error', msg)
       return null
     }
     if (res.code !== 200) {

@@ -105,9 +105,16 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       log.info('更新包下载完成，可安装')
     })
     electronAPI.on('update:error', (msg) => {
-      // 下载/安装阶段错误：设 error 状态，但检查阶段的失败已由 update:not-available 处理
-      set({ downloadStatus: 'error', errorMessage: String(msg) })
-      log.error('更新出错:', msg)
+      // 升级检查阶段错误：set status=error 让 Splash ErrorView 显示具体原因
+      // 下载/安装阶段错误：保存 errorMessage，UpdateDialog 显示下载失败
+      const text = String(msg)
+      set({
+        status: 'error',
+        message: text,
+        downloadStatus: 'error',
+        errorMessage: text
+      })
+      log.error('更新出错:', text)
     })
   },
 

@@ -200,7 +200,7 @@ function ErrorView({
   onContinue: () => void
 }) {
   return (
-    <Stack spacing={2} sx={{ minWidth: 400, maxWidth: 500 }}>
+    <Stack spacing={2} sx={{ minWidth: 400, maxWidth: 560 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <Stack direction="row" alignItems="center" spacing={1.5}>
           <Typography sx={{ fontSize: 16, fontWeight: 600 }}>检查更新失败</Typography>
@@ -210,8 +210,23 @@ function ErrorView({
         </Stack>
         <Button size="small" onClick={onContinue}>继续旧版本</Button>
       </Stack>
-      <Typography sx={{ fontSize: 14, color: AppColors.errorRed, lineHeight: 1.6 }}>
-        错误信息：{message}
+      {/* whiteSpace: pre-wrap 保留换行与缩进，fontFamily monospace 让 [1/3]/[2/3] 列对齐 */}
+      <Typography
+        component="pre"
+        sx={{
+          margin: 0,
+          fontSize: 12,
+          fontFamily: 'Consolas, "Courier New", monospace',
+          color: AppColors.errorRed,
+          lineHeight: 1.6,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          padding: 1.5,
+          background: AppColors.errorRed + '0A',
+          borderRadius: 1
+        }}
+      >
+        {message}
       </Typography>
     </Stack>
   )

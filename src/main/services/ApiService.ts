@@ -1,4 +1,6 @@
 import axios, { AxiosInstance } from 'axios'
+import { lookup as dnsLookup } from 'node:dns/promises'
+import { connect as netConnect } from 'node:net'
 import log from 'electron-log/main'
 import { API_BASE_URL, API_SECRET, HTTP_TIMEOUT, UPDATE_CHECK_URL } from '../config'
 import type {
@@ -17,7 +19,12 @@ import type {
 const client: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: HTTP_TIMEOUT,
-  maxRedirects: 5
+  maxRedirects: 5,
+  // ⚠️ 显式禁用代理（Win7 兼容）
+  // axios 在 Node 环境默认会读 HTTP_PROXY/HTTPS_PROXY 环境变量；
+  // Win7 上 IE 代理设置残留或第三方软件注入的代理环境变量会让请求走代理失败。
+  // 显式 proxy:false 完全禁用，直接走系统网络栈，与浏览器一致。
+  proxy: false
 })
 
 /**
@@ -240,8 +247,7 @@ export const ApiService = {
     }
   },
 
-  /**
-   * POST getOrder(wmid, shopid, secret, day_seq) → 单个订单详情（重打/查询打印用）
+  /** POST getOrder(wmid, shopid, secret, day_seq) → 单个订单详情（重打/查询打印用）
    *
    * 重要：后端字段名虽为 day_seq，但实际接收的是 orderId（订单号），不是流水号 daySeq。
    * 对照 KMP HomeComponent.printSingleDoc：形参名为 daySeq，但 DrawerContent 传入的
@@ -269,5 +275,82 @@ export const ApiService = {
       log.error('getOrder 失败 orderId=' + orderId + ':', e)
       return null
     }
+  },
+
+  /**
+   * 网络诊断：分步诊断 DNS / TCP / HTTP 三层，返回多行报告
+   *
+   * 调用场景：Splash 启动检查接口失败时，主进程主动跑一遍诊断，
+   * 把详细错误塞到 error 事件 message 里，让 Splash ErrorView 直接展示。
+   * 用户在 Win7 真机上一眼看出是 DNS 解析失败 / TCP 连不上 / HTTP 错误码。
+   *
+   * 诊断步骤：
+   *  1. DNS 解析 <生产域名>，列出 IPv4/IPv6 地址
+   *  2. TCP 连接到第一个 IPv4 地址的 80 端口（3 秒超时）
+   *  3. 用 axios 实际请求 API_BASE_URL，记录响应码 / 错误信息
+   *
+   * @returns 多行诊断报告字符串
+   */
+  async diagnoseNetwork(): Promise<string> {
+    const lines: string[] = []
+    const host = new URL(API_BASE_URL).hostname
+    const port = new URL(API_BASE_URL).port || (new URL(API_BASE_URL).protocol === 'https:' ? '443' : '80')
+
+    // 1. DNS 解析
+    lines.push(`[1/3] DNS 解析 ${host}`)
+    try {
+      const addrs = await dnsLookup(host, { all: true, verbatim: true })
+      const ipv4 = addrs.filter((a) => a.family === 4).map((a) => a.address)
+      const ipv6 = addrs.filter((a) => a.family === 6).map((a) => a.address)
+      lines.push(`  IPv4: ${ipv4.length ? ipv4.join(', ') : '(无)'}`)
+      lines.push(`  IPv6: ${ipv6.length ? ipv6.join(', ') : '(无)'}`)
+    } catch (e) {
+      lines.push(`  ❌ DNS 解析失败: ${(e as Error).message}`)
+      lines.push(`  提示：检查系统 DNS 配置或 hosts 文件`)
+      return lines.join('\n')
+    }
+
+    // 2. TCP 连接
+    const ip = (await dnsLookup(host, { verbatim: true })).address
+    lines.push(`[2/3] TCP 连接 ${ip}:${port}`)
+    const tcpOk = await new Promise<boolean>((resolve) => {
+      const sock = netConnect({ host: ip, port: Number(port) }, () => {
+        sock.end()
+        resolve(true)
+      })
+      sock.setTimeout(3000)
+      sock.on('timeout', () => {
+        sock.destroy()
+        resolve(false)
+      })
+      sock.on('error', () => resolve(false))
+    })
+    if (tcpOk) {
+      lines.push(`  ✓ TCP 连接成功`)
+    } else {
+      lines.push(`  ❌ TCP 连接失败（超时或被拒绝）`)
+      lines.push(`  提示：检查防火墙/路由/VPN，或公司网络是否屏蔽了 ${host}`)
+      return lines.join('\n')
+    }
+
+    // 3. HTTP 请求
+    lines.push(`[3/3] HTTP 请求 ${API_BASE_URL}getPlatformList`)
+    try {
+      const res = await client.get('getPlatformList', { timeout: 8000 })
+      lines.push(`  ✓ HTTP ${res.status} code=${res.data?.code} 平台数=${res.data?.data?.length ?? 0}`)
+    } catch (e) {
+      const err = e as any
+      if (err?.response) {
+        lines.push(`  ⚠️ HTTP ${err.response.status} ${err.response.statusText}`)
+        lines.push(`  服务端响应了但状态异常，可能是后端鉴权/接口问题`)
+      } else if (err?.code === 'ECONNABORTED') {
+        lines.push(`  ❌ HTTP 请求超时`)
+      } else {
+        lines.push(`  ❌ HTTP 请求失败: ${err?.message || String(e)}`)
+        if (err?.code) lines.push(`  错误码: ${err.code}`)
+      }
+    }
+
+    return lines.join('\n')
   }
 }

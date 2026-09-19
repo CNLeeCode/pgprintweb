@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
+import { dns } from 'node:dns'
 import { join } from 'path'
 import log from 'electron-log/main'
 import { applyWin7CompatPatches } from './utils/win7-compat'
@@ -7,6 +8,14 @@ import { initCrashReporter } from './utils/crash'
 import { JsonStore as DatabaseService } from './services/JsonStore'
 import { registerAllIpc } from './ipc'
 import { WINDOW_WIDTH, WINDOW_HEIGHT } from './config'
+
+// ⚠️ Win7 兼容：强制 DNS 解析优先 IPv4
+// Node 16 默认 dns.lookup 行为在 Win7 上可能优先返回 IPv6 (AAAA 记录)，
+// 但 Win7 默认 IPv6 路由不通 → 连接到 IPv6 地址超时 30s → 接口"不通"。
+// 浏览器（系统网络栈）走 Happy Eyeballs 优先 IPv4，所以"直接 GET 访问正常"，
+// 但 Electron 主进程的 axios 走 Node http 模块用 c-ares/libuv DNS，行为不同。
+// ipv4first 让 IPv4 地址优先尝试，IPv6 失败回退兜底。
+dns.setDefaultResultOrder('ipv4first')
 
 // Win7 兼容补丁必须在 app.ready 之前应用
 applyWin7CompatPatches()

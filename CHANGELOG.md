@@ -1,5 +1,44 @@
 # 变更日志
 
+## [1.0.13] - 2026-09-19
+
+### 修复：Win7 真机后端接口不通（DNS/代理问题）
+
+#### 症状
+打包后在 Windows 7 SP1 真机打开能正常显示 Splash，但版本检查接口失败，
+登录后获取平台列表等为空。Win7 系统浏览器直接 GET 访问接口正常。
+
+#### 根因（两个独立问题）
+1. **Node 16 在 Win7 上 DNS 优先 IPv6 失败**
+   Node 默认 `dns.lookup` 行为可能把 AAAA 记录排前，Win7 默认 IPv6 路由不通 →
+   连接超时 30s → 接口"不通"。浏览器（系统网络栈）走 Happy Eyeballs 优先 IPv4，
+   所以"直接 GET 访问正常"。但 Electron 主进程 axios 走 Node http 模块用 c-ares
+   /libuv DNS，行为不同。
+2. **axios 默认读环境变量代理**
+   axios 在 Node 环境默认会读 `HTTP_PROXY`/`HTTPS_PROXY`，Win7 上 IE 代理设置
+   残留或第三方软件注入的代理环境变量会让请求走代理失败。
+3. **错误被静默降级**
+   UpgradeService 接口失败时直接广播 `update:not-available` 当"已最新"处理，
+   用户在 Splash 看不到错误，1 秒后跳走。典型的"接口不通却以为应用坏了"。
+
+#### 变更
+- `src/main/index.ts` 顶部加 `dns.setDefaultResultOrder('ipv4first')`，强制 IPv4 优先
+- `src/main/services/ApiService.ts` axios client 加 `proxy: false`，禁用环境变量代理
+- `src/main/services/NetworkService.ts` 网络检查的 axios.head 同步加 `proxy: false`
+- `src/main/services/ApiService.ts` 新增 `diagnoseNetwork()` 方法：分步诊断 DNS 解析 → TCP
+  连接 → HTTP 请求三层，返回多行报告（含 IPv4/IPv6 地址、TCP 是否能连、HTTP 状态码）
+- `src/main/services/UpgradeService.ts` 接口失败时主动跑诊断，把详细报告塞到 error 事件
+  message 里，让 Splash ErrorView 直接展示
+- `src/renderer/stores/updateStore.ts` 处理 update:error 事件时设 `status=error`，
+  让 SplashView 切到 ErrorView
+- `src/renderer/views/SplashView.tsx` ErrorView 改用 `<pre>` + monospace 字体
+  + pre-wrap 保留多行换行格式，列宽对齐
+
+#### 影响
+- Win7 真机后端接口能正常请求
+- 接口失败时 Splash 显示详细诊断报告（DNS 解析、TCP 连接、HTTP 状态），
+  现场一眼看出问题原因，无需远程拿日志
+
 ## [1.0.12] - 2026-09-19
 
 ### 修复：Win7 真机打开白屏
