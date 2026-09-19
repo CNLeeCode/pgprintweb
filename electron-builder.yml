@@ -33,5 +33,9 @@ nsis:
   uninstallDisplayName: pgprinter
   # 安装完成后自动启动应用
   runAfterFinish: true
-# 方案 B：不再使用 electron-updater，无需 publish 配置
-# 下载地址由后端 getAppUpdateInfo 接口返回，发版只需把 exe 丢到静态目录 + 改接口返回
+# 显式禁止 electron-builder 自动发布到 GitHub Release。
+# CI 环境下 electron-builder 会因 reason=CI detected 自动尝试 publish，
+# 缺少 GH_TOKEN 时报 "GitHub Personal Access Token is not set" 中断构建。
+# 本项目用 actions/upload-artifact 上传产物，不需要 electron-builder 自行发布。
+# 下载地址由后端 getAppUpdateInfo 接口返回，发版只需把 exe 丢到静态目录 + 改接口返回。
+publish: never

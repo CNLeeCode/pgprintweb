@@ -19,6 +19,7 @@ import { ApiService } from './ApiService'
 import { StoreService } from './StoreService'
 import { templateV1 } from '../utils/printTemplate'
 import { printRawViaCommand } from '../utils/rawPrint'
+import { printRawViaUsb } from '../utils/usbPrint'
 import { PRINT_MAX_RETRY, POLL_INTERVAL, REFUND_SOUND_COOLDOWN, PRINT_SEND_TIMEOUT } from '../config'
 import type {
   ShopPrintOrderDetail,
@@ -317,7 +318,6 @@ class PrintServiceImpl extends EventEmitter {
       log.info(`sendToPrinter 设备=${device.name} 系统名=${printerName} 类型=${device.type} 字节数=${data.length}`)
       if (device.type === 'usb') {
         // USB 直写专用通道（不走 CUPS / Spooler 任何路径）
-        const { printRawViaUsb } = await import('../utils/usbPrint')
         const usbOptions =
           device.vendorId && device.productId
             ? { vid: device.vendorId, pid: device.productId }

@@ -1,5 +1,33 @@
 # 变更日志
 
+## [1.0.9] - 2026-09-19
+
+### 修复：CI 打包成功后 electron-builder 自动 publish 失败中断构建
+
+#### 背景
+1.0.8 修复 `--nsis` 非法参数后，electron-builder 正常执行打包，成功生成
+`release\pgprinter Setup 1.0.0.exe`。但最后一步报错退出：
+```
+⨯ GitHub Personal Access Token is not set, neither programmatically, nor using env "GH_TOKEN"
+```
+导致 `actions/upload-artifact` 未执行，CI 整体失败。
+
+#### 根因
+electron-builder 在 CI 环境下会自动启用 publish 流程（日志可见
+`artifacts will be published if draft release exists  reason=CI detected`），
+默认尝试发布到 GitHub Release。本项目 workflow 未配置 `GH_TOKEN`，
+也不需要 electron-builder 自行发布（用 `actions/upload-artifact` 上传产物即可）。
+
+#### 变更
+- `electron-builder.yml`：新增 `publish: never`，显式禁止自动发布
+- `src/main/services/PrintService.ts`：`usbPrint` 由动态 import 改为静态 import，
+  消除 vite 警告 "dynamically imported by ... but also statically imported by ..."
+  （`printRawViaUsb` 仅一处调用，无需代码分割）
+
+#### 影响
+- CI 打包后不再因 publish 失败中断，`release/*.exe` 可被 `upload-artifact` 正常上传
+- usbPrint 模块加载方式统一为静态 import，警告消除
+
 ## [1.0.8] - 2026-09-19
 
 ### 修复：CI 打包步骤 electron-builder 打印 help 后退出，未生成 exe
