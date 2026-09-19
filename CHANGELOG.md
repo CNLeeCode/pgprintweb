@@ -1,5 +1,24 @@
 # 变更日志
 
+## [1.0.6] - 2026-09-19
+
+### 修复：CI 原生模块编译失败（@thiagoelg/node-printer node-gyp 报错）
+
+#### 背景
+CI 在 `npm install` 步骤失败：`@thiagoelg/node-printer@0.6.2` 无 Windows prebuild 二进制，回退 `node-gyp rebuild` 本地编译 C++ 失败（`npm error code 1`）。同时 `better-sqlite3@12` 要求 Node 20+，Node 18 触发 EBADENGINE 警告。
+
+#### 变更
+- `package.json`：`@thiagoelg/node-printer` 从 `dependencies` 移到 `optionalDependencies`（代码已 try-require 降级，装不上不阻断主流程）
+- `.github/workflows/build-windows.yml`：
+  - Node 18 → Node 20（消除 better-sqlite3 EBADENGINE 警告，GitHub Actions 推荐 LTS）
+  - `npm install` → `npm install --ignore-scripts`（跳过所有包的 prebuild-install/node-gyp postinstall 脚本，避免 @thiagoelg/node-printer 编译失败拖垮安装）
+  - 原生模块编译统一由下一步 `electron-rebuild` 处理（只编译 serialport/usb/better-sqlite3 白名单）
+
+#### 影响
+- CI `npm install` 不再因 @thiagoelg/node-printer 编译失败而中断
+- better-sqlite3/serialport/usb 仍由 electron-rebuild 正确编译为 Electron 22 ABI
+- @thiagoelg/node-printer 在打包产物中缺失，运行时 try-require 降级到系统命令行 RAW 通道（不影响核心打印功能）
+
 ## [1.0.5] - 2026-09-19
 
 ### 修复：CI 依赖版本声明错误导致 npm install 失败

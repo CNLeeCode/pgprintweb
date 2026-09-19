@@ -22,10 +22,8 @@
     "axios": "^1.7.7",
     "better-sqlite3": "^12.0.0",
     "bwip-js": "^4.3.0",
-    "@thiagoelg/node-printer": "^0.6.2",
     "electron-log": "^5.1.7",
     "electron-store": "^8.2.0",
-    
     "iconv-lite": "^0.6.3",
     "node-thermal-printer": "^4.5.0",
     "pngjs": "^7.0.0",
@@ -35,6 +33,9 @@
     "serialport": "^12.0.0",
     "usb": "^2.12.1",
     "zustand": "^4.5.5"
+  },
+  "optionalDependencies": {
+    "@thiagoelg/node-printer": "^0.6.2"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",

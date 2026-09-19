@@ -56,10 +56,10 @@ jobs:
       # Electron 内嵌 ABI（Electron 自带 runtime）。
       # GitHub Actions 已弃用 Node 16/20，runner 默认 Node 24，
       # 这里用 Node 18（LTS，actions/setup-node 仍支持）构建，ABI 兼容无问题。
-      - name: Setup Node.js 18
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       # ----- 3. 规范化版本号 -----
@@ -84,14 +84,16 @@ jobs:
       - name: Set package.json version
         run: npm version ${{ env.NORMALIZED_VERSION }} --no-git-tag-version --allow-same-version
 
-      # ----- 5. 安装依赖 -----
-      # 用 npm install 而非 npm ci，避免 @thiagoelg/node-printer 等
-      # 原生模块编译差异导致严格模式安装失败
-      - name: Install dependencies
-        run: npm install
+      # ----- 5. 安装依赖（跳过原生模块编译脚本）-----
+      # --ignore-scripts 禁止所有包的 prebuild-install / node-gyp postinstall 脚本。
+      # 原因：@thiagoelg/node-printer@0.6.2 无 Windows prebuild，回退 node-gyp
+      # 本地编译 C++ 失败（需特定 MSVC 版本），拖垮整个 npm install。
+      # 该模块已放 optionalDependencies + 代码 try-require 降级，装不上不影响运行。
+      # 其他原生模块（serialport/usb/better-sqlite3）靠下一步 electron-rebuild 编译。
+      - name: Install dependencies (skip native build scripts)
+        run: npm install --ignore-scripts
 
       # ----- 6. 重编译原生模块（Electron ABI）-----
-      # npm install 装的原生模块是 Node ABI，Electron 运行时 ABI 不同会崩溃。
       # electron-rebuild 针对 Electron 22.3.27 (ABI 105) 重新编译 serialport/
       # usb/better-sqlite3。@thiagoelg/node-printer 不列入（代码已 try-require
       # 降级处理，且其 0.6.2 无可靠 prebuild，编译失败会拖垮整个 rebuild）。
