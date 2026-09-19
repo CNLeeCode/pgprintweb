@@ -11,8 +11,9 @@
 # 使用方式：
 #   1. git push 到 GitHub
 #   2. GitHub 仓库 → Actions 标签页 → "Build Windows Installer (Win7 兼容)"
-#   3. 点 "Run workflow"，输入版本号 JSON 数组（默认 ["1.0.0","1.0.1"]）
-#   4. 等待构建完成（约 5-10 分钟），在 Artifacts 区域下载两个 exe
+#   3. 点 "Run workflow"，输入版本号 JSON 数组（默认 ["1.0"]）
+#      支持简写：1.0 会自动规范化为 1.0.0（npm version 要求三段式 semver）
+#   4. 等待构建完成（约 5-10 分钟），在 Artifacts 区域下载 exe
 #
 # 产物：
 #   release/pgprinter Setup {version}.exe — NSIS 一键安装包
@@ -59,11 +60,26 @@ jobs:
           node-version: '16'
           cache: 'npm'
 
-      # ----- 3. 设置 package.json 版本号 -----
+      # ----- 3. 规范化版本号 -----
+      # npm version 要求三段式 semver（1.0.0），用户输入 "1.0" 会报错
+      # 这里用 PowerShell 把简写补零：1.0 → 1.0.0，1.0.1 → 1.0.1，1 → 1.0.0
+      # 输出到 GITHUB_ENV.NORMALIZED_VERSION 供后续步骤使用
+      - name: Normalize version (1.0 → 1.0.0)
+        shell: pwsh
+        run: |
+          $v = "${{ matrix.version }}"
+          $parts = $v.Split('.')
+          while ($parts.Count -lt 3) { $parts = $parts + '0' }
+          $normalized = $parts -join '.'
+          Write-Host "Input: $v → Normalized: $normalized"
+          echo "NORMALIZED_VERSION=$normalized" >> $env:GITHUB_ENV
+
+      # ----- 4. 设置 package.json 版本号 -----
       # electron-builder 读 package.json 的 version 字段命名输出文件
       # npm version 自动改 version 字段，--no-git-tag-version 防止自动建 tag
+      # 用规范化后的三段式版本号，避免 "Invalid version: 1.0" 错误
       - name: Set package.json version
-        run: npm version ${{ matrix.version }} --no-git-tag-version
+        run: npm version ${{ env.NORMALIZED_VERSION }} --no-git-tag-version
 
       # ----- 4. 安装依赖 -----
       # 用 npm install 而非 npm ci，避免 @thiagoelg/node-printer 等
@@ -75,10 +91,11 @@ jobs:
       # npm run build:win = electron-vite build && electron-builder --win --nsis
       # VITE_APP_VERSION 环境变量覆盖 .env.production 的值，注入到 config.ts
       # 优先级：环境变量 > .env.production > .env，确保版本号正确
+      # 用规范化后的三段式版本号，与 package.json version 保持一致
       - name: Build & Package (NSIS)
         run: npm run build:win
         env:
-          VITE_APP_VERSION: ${{ matrix.version }}
+          VITE_APP_VERSION: ${{ env.NORMALIZED_VERSION }}
 
       # ----- 6. 上传安装包 -----
       # electron-builder 输出到 release/ 目录，文件名 pgprinter Setup {version}.exe
@@ -94,8 +111,9 @@ jobs:
       - name: Build info
         run: |
           echo "============================================"
-          echo "Version: ${{ matrix.version }}"
-          echo "Electron: 22.3.27 (Win7 兼容)"
-          echo "Target: NSIS oneClick installer"
+          echo "Input version: ${{ matrix.version }}"
+          echo "Normalized:    ${{ env.NORMALIZED_VERSION }}"
+          echo "Electron:      22.3.27 (Win7 兼容)"
+          echo "Target:        NSIS oneClick installer"
           echo "============================================"
           dir release\*.exe
