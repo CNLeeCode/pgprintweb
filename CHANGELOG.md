@@ -1,5 +1,22 @@
 # 变更日志
 
+## [1.0.8] - 2026-09-19
+
+### 修复：CI 打包步骤 electron-builder 打印 help 后退出，未生成 exe
+
+#### 背景
+CI 执行 `npm run build:win`（= `electron-vite build && electron-builder --win --nsis`）后，electron-builder 仅打印命令行 help 文本就退出，`release/*.exe` 未生成，导致 `actions/upload-artifact` 因 `if-no-files-found: error` 失败。
+
+#### 根因
+`--nsis` 不是 electron-builder 的有效命令行参数。`--win` 才是顶层参数（接受 target list），nsis target 应在 `electron-builder.yml` 的 `win.target` 中指定。`--nsis` 作为未知参数使 electron-builder 进入 help 模式后正常退出（exit code 0），不会报错，极易误判为"构建成功"。
+
+#### 变更
+- `package.json`：`build:win` 脚本 `electron-builder --win --nsis` → `electron-builder --win`
+- `.github/workflows/build-windows.yml`：步骤 7 注释同步更新，说明 nsis target 在 yml 配置
+
+#### 验证
+`electron-builder.yml` 中 `win.target: nsis` 已配置，`electron-builder --win` 会读取该配置生成 NSIS 安装包，行为与原意图一致。
+
 ## [1.0.7] - 2026-09-19
 
 ### 移除：移除两个 CI 编译失败的原生依赖
