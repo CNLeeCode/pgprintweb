@@ -98,6 +98,14 @@ const api = {
     ipcRenderer.invoke('api:getOrderList', wmid, shopid, orderList),
   getOrder: (wmid: string, shopid: string, daySeq: string) =>
     ipcRenderer.invoke('api:getOrder', wmid, shopid, daySeq),
+  /**
+   * 主动诊断网络（Footer 提示网络/接口异常时供用户排查）
+   * 调用后主进程分步执行 DNS 解析 → TCP 连接 → HTTP 请求，返回多行报告。
+   * @returns 多行诊断报告字符串
+   */
+  diagnoseNetwork: () => ipcRenderer.invoke('api:diagnoseNetwork'),
+  /** 拉取最近 50 条接口调用日志（启动时拉一次 + api:log 事件实时增量） */
+  getApiLogs: () => ipcRenderer.invoke('api:getLogs'),
   /** 打印设备 */
   listPrinters: () => ipcRenderer.invoke('device:list'),
   selectPrinter: (id: string) => ipcRenderer.invoke('device:select', id),

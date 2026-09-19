@@ -28,6 +28,10 @@ const fallback: ElectronAPI = {
   getDaySeq: () => Promise.resolve(null),
   getOrderList: () => Promise.resolve([]),
   getOrder: () => Promise.resolve(null),
+  /** 主动诊断网络 */
+  diagnoseNetwork: () => Promise.resolve('（fallback）electronAPI 未注入'),
+  /** 拉取最近 50 条接口调用日志 */
+  getApiLogs: () => Promise.resolve([]),
   listPrinters: () => Promise.resolve([]),
   selectPrinter: () => Promise.resolve(),
   getCurrentPrinterId: () => Promise.resolve(undefined),

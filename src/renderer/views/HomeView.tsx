@@ -12,6 +12,7 @@ import SettingPanel from '../components/SettingPanel'
 import PlatformGrid from '../components/PlatformGrid'
 import QueryPrintDialog from '../components/QueryPrintDialog'
 import UpdateDialog from '../components/UpdateDialog'
+import ApiLogDialog from '../components/ApiLogDialog'
 import { useConfigStore } from '../stores/configStore'
 import { usePlatformStore } from '../stores/platformStore'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -19,6 +20,7 @@ import { usePrintStore } from '../stores/printStore'
 import { useNetworkStore } from '../stores/networkStore'
 import { useUpdateStore } from '../stores/updateStore'
 import { useLogStore } from '../stores/logStore'
+import { useApiLogStore } from '../stores/apiLogStore'
 import { electronAPI } from '../api/bridge'
 import { AppColors } from '../theme/theme'
 import { playRefundSound } from '../utils/audioPlayer'
@@ -63,6 +65,8 @@ export default function HomeView() {
     usePrintStore.getState().subscribe()
     // 启动网络定时检查 + 订阅状态变更
     useNetworkStore.getState().init()
+    // 启动接口日志订阅 + 拉取最近日志（Footer 接口状态指示用）
+    useApiLogStore.getState().init()
     addLog('系统启动，开始监听')
     // 订阅操作日志事件
     electronAPI.on('print:log', (msg) => addLog(String(msg)))
@@ -125,6 +129,8 @@ export default function HomeView() {
   const [queryOpen, setQueryOpen] = useState(false)
   // 更新对话框开关（点击"发现新版本"徽章或下载完成自动打开）
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
+  // 接口日志弹窗开关（点击 Footer 接口状态指示器打开）
+  const [apiLogOpen, setApiLogOpen] = useState(false)
 
   // 订阅下载完成事件：后台静默下载完成后自动弹窗提示用户重启升级
   useEffect(() => {
@@ -246,6 +252,7 @@ export default function HomeView() {
       <AppFooter
         text={networkStatus === 1 ? '网络环境良好' : '网络环境异常'}
         online={networkStatus === 1}
+        onOpenApiLog={() => setApiLogOpen(true)}
       />
 
       {/* 查询打印对话框（对应 KMP DrawerContent） */}
@@ -263,6 +270,9 @@ export default function HomeView() {
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
       />
+
+      {/* 接口日志弹窗：Footer 接口状态指示器打开，含网络诊断按钮 */}
+      <ApiLogDialog open={apiLogOpen} onClose={() => setApiLogOpen(false)} />
     </Box>
   )
 }

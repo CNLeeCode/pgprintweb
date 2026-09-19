@@ -15,7 +15,7 @@ import { registerStoreDataIpc } from './store-data.ipc'
 export function registerAllIpc(getMainWindow: () => Electron.BrowserWindow | null): void {
   registerStoreIpc()
   registerAppIpc()
-  registerApiIpc()
+  registerApiIpc(getMainWindow)
   registerDeviceIpc()
   registerPrintIpc(getMainWindow)
   registerNetworkIpc(getMainWindow)

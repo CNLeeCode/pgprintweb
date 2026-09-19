@@ -1,5 +1,56 @@
 # 变更日志
 
+## [1.0.14] - 2026-09-19
+
+### 新增：Footer 接口状态指示器 + 接口日志弹窗 + 网络诊断
+
+#### 背景
+接口不通问题用户难自查：黑盒操作，失败后只在控制台/日志文件留下线索，
+现场没法立刻看出原因。需要把状态和诊断能力暴露到页面上。
+
+#### 实现
+
+**1. Footer 左下角"接口状态指示器"**（`AppFooter.tsx`）
+- 基于最近 5 条接口调用日志判定状态：
+  - 全成功 → 绿色"接口正常"
+  - 含失败 → 红色"接口有失败"
+  - 无记录 → 灰色"接口无记录"
+- 点击打开接口日志弹窗（含网络诊断按钮）
+
+**2. ApiService 调用日志记录**（`ApiService.ts`）
+- 新增 `ApiLogEntry` 类型 + `recentLogs` 数组（FIFO，max 50）
+- 每个 API 方法（getAppUpdateInfo / getPlatformList / getDaySeq /
+  getOrderList / getOrder）成功/失败分支均调 `recordLog` 记录
+- emit('api-log', entry) → IPC 转发 → 渲染进程实时增量更新
+
+**3. 接口日志弹窗**（`ApiLogDialog.tsx`）
+- 顶部"诊断网络"按钮：调主进程 `api:diagnoseNetwork`，分步运行
+  DNS 解析 → TCP 连接 → HTTP 请求，多行报告展示（monospace + pre-wrap）
+- 主体：最近 50 条日志列表（最新倒序），含时间/接口/状态色点/简述
+- 底部：清空日志 / 关闭按钮
+
+**4. IPC 通道新增**
+- `api:diagnoseNetwork`：主动诊断，返回 DNS/TCP/HTTP 多行报告
+- `api:getLogs`：拉取最近 50 条日志
+- `api:log`：事件广播（每次接口调用实时推送）
+
+#### 文件
+- `src/main/services/ApiService.ts`：加 `recordLog` + `diagnoseNetwork` + `on/getRecentLogs`
+- `src/main/ipc/api.ipc.ts`：注册诊断/日志通道 + 转发 api-log 事件
+- `src/main/ipc/index.ts`：传 getMainWindow 到 registerApiIpc
+- `src/preload/index.ts`：暴露 `diagnoseNetwork` / `getApiLogs`
+- `src/renderer/api/bridge.ts`：fallback 补充新方法
+- `src/renderer/stores/apiLogStore.ts`：[NEW] 日志状态管理
+- `src/renderer/components/ApiLogDialog.tsx`：[NEW] 日志弹窗
+- `src/renderer/components/AppFooter.tsx`：加接口状态指示器
+- `src/renderer/views/HomeView.tsx`：集成 ApiLogDialog
+
+#### 影响
+- 现场接口不通时，点 Footer 接口状态即可看见：
+  - 最近接口失败原因（timeout / ECONNREFUSED / HTTP 500）
+  - 主动跑诊断看 DNS 解析出的 IPv4/IPv6、TCP 是否能连、HTTP 状态码
+- 不再需要远程拿日志，省一轮远程排障
+
 ## [1.0.13] - 2026-09-19
 
 ### 修复：Win7 真机后端接口不通（DNS/代理问题）

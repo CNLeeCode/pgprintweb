@@ -1,8 +1,81 @@
 import axios, { AxiosInstance } from 'axios'
+import { EventEmitter } from 'events'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { connect as netConnect } from 'node:net'
 import log from 'electron-log/main'
 import { API_BASE_URL, API_SECRET, HTTP_TIMEOUT, UPDATE_CHECK_URL } from '../config'
+
+/**
+ * 接口调用日志条目（用于渲染进程"接口日志"弹窗展示）
+ *
+ * 每条记录一次接口调用的结果（成功/失败 + 简要原因）。
+ * 保留最近 50 条（FIFO，超出自动丢弃最旧），既能还原现场又不过度占内存。
+ *
+ * 用途：
+ *  - 主进程主动 emit('api-log', entry) → IPC 广播给渲染进程 → Footer 状态实时刷新
+ *  - 渲染进程通过 api:getLogs IPC 拉取最近 50 条做完整列表展示
+ */
+export interface ApiLogEntry {
+  /** 时间戳 ISO 字符串（YYYY-MM-DD HH:mm:ss） */
+  time: string
+  /** 接口名（getPlatformList / getDaySeq / getOrderList / getOrder / getAppUpdateInfo） */
+  method: string
+  /** 状态：success / fail */
+  status: 'success' | 'fail'
+  /** 后端 code（成功时记录业务 code，失败时无则省略） */
+  code?: number | string
+  /** 简要描述（成功：success/数据条数；失败：错误简述，如 "timeout" "ECONNREFUSED" "HTTP 500"） */
+  message: string
+}
+
+/** 最近接口调用日志保留上限（FIFO） */
+const MAX_API_LOGS = 50
+
+/** 内部 EventEmitter：用于向 IPC 层广播 api-log 事件 */
+const apiLogEmitter = new EventEmitter()
+
+/** 最近接口调用日志（FIFO，最新追加到末尾） */
+const recentLogs: ApiLogEntry[] = []
+
+/**
+ * 记录一条接口调用日志
+ *
+ * 统一入口：所有 ApiService 方法在成功/失败分支都调用此函数，确保日志齐全。
+ * 同时主动 emit 事件，由 IPC 层转发到渲染进程，让 Footer 实时感知接口状态。
+ *
+ * @param method 接口名
+ * @param status success / fail
+ * @param message 简要描述
+ * @param code 后端 code（可选）
+ */
+function recordLog(
+  method: string,
+  status: 'success' | 'fail',
+  message: string,
+  code?: number | string
+): void {
+  const entry: ApiLogEntry = {
+    time: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    method,
+    status,
+    message,
+    code
+  }
+  recentLogs.push(entry)
+  if (recentLogs.length > MAX_API_LOGS) recentLogs.shift()
+  apiLogEmitter.emit('api-log', entry)
+}
+
+/** 从 axios 错误对象提取简短描述（避免把整个 Error 序列化刷屏） */
+function shortError(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const err = e as { code?: string; message?: string; response?: { status?: number } }
+    if (err.response?.status) return `HTTP ${err.response.status}`
+    if (err.code) return err.code
+    if (err.message) return err.message.substring(0, 120)
+  }
+  return String(e).substring(0, 120)
+}
 import type {
   RequestResult,
   PrintPlatform,
@@ -145,6 +218,10 @@ function form(params: Record<string, string | string[]>): URLSearchParams {
 }
 
 export const ApiService = {
+  /** 订阅接口日志事件（IPC 层用于转发到渲染进程） */
+  on: (event: string, listener: (...args: unknown[]) => void) => apiLogEmitter.on(event, listener),
+  /** 获取最近接口调用日志（渲染进程通过 IPC 拉取） */
+  getRecentLogs: (): ApiLogEntry[] => [...recentLogs],
   /**
    * GET getWebPgPrintUpdateInfo → 获取最新版本号 + 下载地址 + 更新说明（方案 B）
    *
@@ -185,9 +262,11 @@ export const ApiService = {
         'version=' + (res.data as any)?.data?.version,
         'hasUrl=' + !!((res.data as any)?.data?.downloadUrl)
       )
+      recordLog('getAppUpdateInfo', 'success', `version=${(res.data as any)?.data?.version || '(无)'} hasUrl=${!!((res.data as any)?.data?.downloadUrl)}`, res.data?.code)
       return res.data
     } catch (e) {
       log.error('getAppUpdateInfo 失败:', e)
+      recordLog('getAppUpdateInfo', 'fail', shortError(e))
       return null
     }
   },
@@ -197,9 +276,11 @@ export const ApiService = {
     try {
       const res = await client.get<RequestResult<PrintPlatform[]>>('getPlatformList')
       log.info('getPlatformList:', res.data?.code, res.data?.data?.length)
+      recordLog('getPlatformList', 'success', `平台数=${res.data?.data?.length ?? 0}`, res.data?.code)
       return res.data
     } catch (e) {
       log.error('getPlatformList 失败:', e)
+      recordLog('getPlatformList', 'fail', shortError(e))
       return null
     }
   },
@@ -230,6 +311,7 @@ export const ApiService = {
       return res.data
     } catch (e) {
       log.error('getDaySeq 失败:', e)
+      recordLog('getDaySeq', 'fail', shortError(e) + (shopid ? ` shopid=${shopid}` : ''))
       return null
     }
   },
@@ -240,9 +322,11 @@ export const ApiService = {
     if (!orderIdList || orderIdList.length === 0) return []
     try {
       const res = await client.post<RequestResult<ShopPrintOrderDetail[]>>('getOrderList', form({ wmid, shopid, secret: API_SECRET, 'orderid_list[]': orderIdList }))
+      recordLog('getOrderList', 'success', `订单数=${res.data?.data?.length ?? 0}`, res.data?.code)
       return res.data?.data || []
     } catch (e) {
       log.error('getOrderList 失败:', e)
+      recordLog('getOrderList', 'fail', shortError(e))
       return []
     }
   },
@@ -270,9 +354,11 @@ export const ApiService = {
         form({ wmid, shopid, secret: API_SECRET, day_seq: orderId })
       )
       log.info(`getOrder orderId=${orderId} code=${res.data?.code} msg=${(res.data as any)?.msg || ''} hasData=${!!res.data?.data}`)
+      recordLog('getOrder', 'success', `orderId=${orderId} hasData=${!!res.data?.data}`, res.data?.code)
       return res.data?.data || null
     } catch (e) {
       log.error('getOrder 失败 orderId=' + orderId + ':', e)
+      recordLog('getOrder', 'fail', shortError(e) + ` orderId=${orderId}`)
       return null
     }
   },
