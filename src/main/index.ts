@@ -33,6 +33,24 @@ function createWindow(): void {
     mainWindow?.show()
   })
 
+  // ===== 调试：F12 / Ctrl+Shift+I 打开 DevTools =====
+  // Win7 真机白屏排查用：白屏时按 F12 看控制台错误（路由/CSP/JS 异常一目了然）。
+  // 生产环境不默认开 DevTools，仅保留快捷键供现场排障，不影响店员正常使用。
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown') {
+      const { key, control, shift } = input
+      const isF12 = key === 'F12'
+      const isCtrlShiftI = control && shift && (key === 'I' || key === 'i')
+      const isCtrlR = control && !shift && (key === 'R' || key === 'r')
+      if (isF12 || isCtrlShiftI) {
+        mainWindow?.webContents.toggleDevTools()
+      } else if (isCtrlR) {
+        // 菜单的 CmdOrCtrl+R 在 autoHideMenuBar + Win7 下偶尔不响应，这里兜底
+        mainWindow?.webContents.reload()
+      }
+    }
+  })
+
   // ===== 诊断：捕获渲染进程 console / preload 错误 / 加载失败，转发到主进程日志 =====
   mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     const tag = level >= 2 ? 'error' : level === 1 ? 'warn' : 'info'

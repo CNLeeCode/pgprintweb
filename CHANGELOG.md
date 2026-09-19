@@ -1,5 +1,39 @@
 # 变更日志
 
+## [1.0.12] - 2026-09-19
+
+### 修复：Win7 真机打开白屏
+
+#### 症状
+打包后在 Windows 7 旗舰版 SP1（i3-6100 / 4GB）打开应用，窗口标题栏正常但内容区全白，
+按任何键无反应，菜单"重新加载"也无效。
+
+#### 根因（两个叠加）
+1. **`BrowserRouter` 在 `file://` 协议下路由匹配失败**
+   打包后主进程用 `loadFile` 加载 `index.html`，URL 形如
+   `file:///D:/.../resources/app.asar/out/renderer/index.html`。
+   BrowserRouter 依赖 History API 的 `location.pathname` 做路由匹配，在 `file://` 下
+   pathname 是文件绝对路径（含 `index.html`），路由表里的 `/` `/login` `/home` 全部
+   匹配不上 → 兜底 `Navigate to="/"` 在 `file://` 下又死循环 → 整个路由树不渲染 → 白屏。
+2. **`--disable-software-rasterizer` 让 Win7 禁用 GPU 后连软件渲染也废了**
+   `disableHardwareAcceleration()` + `--disable-gpu` 已经关掉 GPU 渲染路径，此时
+   Chromium 必须回退到 SwiftShader 软件光栅化才能绘制画面。之前又叠了
+   `--disable-software-rasterizer`，软件光栅化也被禁，Chromium 没有任何可用渲染后端，
+   Win7 老机器直接白屏。
+
+#### 变更
+- `src/renderer/main.tsx`：`BrowserRouter` → `HashRouter`
+  HashRouter 用 `location.hash`（`#/#/login`），与协议/pathname 无关，`file://` 下稳定。
+  Electron 桌面应用标配，dev（http://localhost）和 prod（file://）都兼容。
+- `src/main/utils/win7-compat.ts`：移除 `--disable-software-rasterizer` 和多余的
+  `--disable-gpu`（`disableHardwareAcceleration` 已等价），补注释说明为何不能加。
+- `src/main/index.ts`：加 F12 / Ctrl+Shift+I 快捷键打开 DevTools，Win7 现场白屏排障用。
+  生产不默认开，仅保留快捷键，不影响店员正常使用。
+
+#### 影响
+- Win7 真机打开正常显示 Splash 启动页
+- 白屏时按 F12 可直接看控制台错误，不再需要远程拿日志
+
 ## [1.0.11] - 2026-09-19
 
 ### 性能：Electron/electron-builder 走 npmmirror 镜像 + 缓存双提速
