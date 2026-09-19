@@ -52,12 +52,14 @@ jobs:
         uses: actions/checkout@v4
 
       # ----- 2. 安装 Node.js -----
-      # Electron 22.3.27 对应 Node 16.17.1，用 16 构建 ABI 完全匹配
-      # （若 16 不可用可降级 18，构建环境 Node 版本不影响 Electron 内嵌 ABI）
-      - name: Setup Node.js 16
+      # Electron 22.3.27 内嵌 Node 16.17.1，但构建环境的 Node 版本不影响
+      # Electron 内嵌 ABI（Electron 自带 runtime）。
+      # GitHub Actions 已弃用 Node 16/20，runner 默认 Node 24，
+      # 这里用 Node 18（LTS，actions/setup-node 仍支持）构建，ABI 兼容无问题。
+      - name: Setup Node.js 18
         uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '18'
           cache: 'npm'
 
       # ----- 3. 规范化版本号 -----
@@ -77,9 +79,10 @@ jobs:
       # ----- 4. 设置 package.json 版本号 -----
       # electron-builder 读 package.json 的 version 字段命名输出文件
       # npm version 自动改 version 字段，--no-git-tag-version 防止自动建 tag
-      # 用规范化后的三段式版本号，避免 "Invalid version: 1.0" 错误
+      # --allow-same-version 允许版本号与当前一致（package.json 初始已是 1.0.0），
+      # 避免 "Version not changed" 错误中断构建
       - name: Set package.json version
-        run: npm version ${{ env.NORMALIZED_VERSION }} --no-git-tag-version
+        run: npm version ${{ env.NORMALIZED_VERSION }} --no-git-tag-version --allow-same-version
 
       # ----- 4. 安装依赖 -----
       # 用 npm install 而非 npm ci，避免 @thiagoelg/node-printer 等
