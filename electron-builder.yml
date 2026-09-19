@@ -3,7 +3,8 @@ productName: pgprinter
 copyright: 2025 BUTCOMPANY
 # 跳过原生模块重编译：macOS 上 node-gyp 编译 serialport/usb 会因 SDK 不兼容失败。
 # serialport/usb 自带 win32-x64 prebuilds，直接拷贝即可在 Windows 运行。
-# @thiagoelg/node-printer 无 prebuilds，Windows 上懒加载失败自动回退 PowerShell RawPrinter。
+# 已移除 @thiagoelg/node-printer 和 better-sqlite3（无可用 prebuild / Node 引擎不兼容），
+# RAW 字节流打印统一走系统命令行（macOS lp / Windows PowerShell RawPrinter）+ USB 直写。
 npmRebuild: false
 directories:
   output: release

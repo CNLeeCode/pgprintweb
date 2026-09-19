@@ -19,8 +19,9 @@
  *    StartDocPrinter/WritePrinter/ClosePrinter），同样按 RAW 数据类型发送。
  *    原生 PowerShell 自带 Add-Type 可编译 C# 互操作代码，无需额外组件。
  *
- * 优先级低于 `@thiagoelg/node-printer` 的 printDirect（原生模块性能更好，
- * 也更稳定），作为其回退方案。两者都失败时调用方应明确报错。
+ * 作为 macOS/Linux 上 lp / Windows PowerShell RawPrinter 的前置 USB 直写通道：
+ * 优先 USB 直写（绕过 CUPS PPD filter，最可靠），失败回退系统命令行 RAW。
+ * 两者都失败时调用方应明确报错。
  */
 import { spawn } from 'child_process'
 import { tmpdir } from 'os'

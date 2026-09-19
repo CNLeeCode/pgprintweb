@@ -85,18 +85,16 @@ jobs:
         run: npm version ${{ env.NORMALIZED_VERSION }} --no-git-tag-version --allow-same-version
 
       # ----- 5. 安装依赖（跳过原生模块编译脚本）-----
-      # --ignore-scripts 禁止所有包的 prebuild-install / node-gyp postinstall 脚本。
-      # 原因：@thiagoelg/node-printer@0.6.2 无 Windows prebuild，回退 node-gyp
-      # 本地编译 C++ 失败（需特定 MSVC 版本），拖垮整个 npm install。
-      # 该模块已放 optionalDependencies + 代码 try-require 降级，装不上不影响运行。
-      # 其他原生模块（serialport/usb/better-sqlite3）靠下一步 electron-rebuild 编译。
+      # --ignore-scripts 禁止所有包的 prebuild-install / node-gyp postinstall 脚本，
+      # 加速安装并避免任何包的 postinstall 网络请求/编译卡住。
+      # 已移除 @thiagoelg/node-printer（无 Windows prebuild，node-gyp 编译失败）和
+      # better-sqlite3（v12 要求 Node 20+，与 Electron 22 的 Node ABI 不兼容）。
+      # 剩余原生模块（serialport/usb）靠下一步 electron-rebuild 编译为 Electron ABI。
       - name: Install dependencies (skip native build scripts)
         run: npm install --ignore-scripts
 
       # ----- 6. 重编译原生模块（Electron ABI）-----
-      # electron-rebuild 针对 Electron 22.3.27 (ABI 105) 重新编译 serialport/
-      # usb/better-sqlite3。@thiagoelg/node-printer 不列入（代码已 try-require
-      # 降级处理，且其 0.6.2 无可靠 prebuild，编译失败会拖垮整个 rebuild）。
+      # electron-rebuild 针对 Electron 22.3.27 (ABI 105) 重新编译 serialport/usb。
       # 若 prebuild 可用则秒下，否则 node-gyp 本地编译（Windows runner 自带 MSVC）。
       - name: Rebuild native modules for Electron
         run: npm run rebuild

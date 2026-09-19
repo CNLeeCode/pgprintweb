@@ -274,7 +274,7 @@ class PrintServiceImpl extends EventEmitter {
   /**
    * 将字节流发送到打印设备（对应 KMP PrinterManager.print）
    * - usb 类型：通过 libusb 直写字节流到 OUT 端点（绕过 CUPS PPD filter）
-   * - driver 类型：先 USB 直写（按队列名反查 USB 设备），失败回退 printDirect / lp
+   * - driver 类型：先 USB 直写（按队列名反查 USB 设备），失败回退 lp / PowerShell RawPrinter
    * - serial 类型：通过 serialport 串口写入（GBK 字节流）
    */
   /**
@@ -311,9 +311,8 @@ class PrintServiceImpl extends EventEmitter {
 
   private async sendToPrinter(device: PrinterTarget, data: Buffer): Promise<PrintResult> {
     try {
-      // 关键：Electron silent print 和 @thiagoelg/node-printer 的 printDirect
-      // 都要求传入"系统打印机名 p.name"（保存在 device.path），不是 displayName。
-      // 用 device.path 优先，回退 device.name，避免找不到打印机导致失败。
+      // 关键：RAW 字节流打印要求传入"系统打印机名 p.name"（保存在 device.path），
+      // 不是 displayName。用 device.path 优先，回退 device.name，避免找不到打印机导致失败。
       const printerName = device.path || device.name
       log.info(`sendToPrinter 设备=${device.name} 系统名=${printerName} 类型=${device.type} 字节数=${data.length}`)
       if (device.type === 'usb') {
@@ -367,11 +366,10 @@ class PrintServiceImpl extends EventEmitter {
    * 关键：ES/POS 字节流是热敏打印机的指令流，必须以 RAW 数据类型直接
    * 灌入打印机驱动，不允许经过任何 HTML/PDF 渲染（silent print 必然乱码）。
    *
-   * 三档优先级：
-   *  1. `@thiagoelg/node-printer` 的 printDirect（原生模块，最快最稳）
-   *  2. 系统命令行回退（macOS/Linux 优先 USB 直写绕过 CUPS / Windows PowerShell RawPrinter）
+   * 两档优先级：
+   *  1. 系统命令行 RAW（macOS/Linux 优先 USB 直写绕过 CUPS / Windows PowerShell RawPrinter）
    *     —— 等价 KMP 原版 `javax.print.PrintService` 的 RAW 打印通道
-   *  3. 都失败 → 明确返回 ioError（不再用 silent 兜底产生乱码）
+   *  2. 失败 → 明确返回 ioError（不再用 silent 兜底产生乱码）
    *
    * @param printerName 系统打印机名（p.name，非 displayName）
    * @param data ESC/POS 字节流
@@ -382,47 +380,19 @@ class PrintServiceImpl extends EventEmitter {
     data: Buffer,
     options?: { vid?: number; pid?: number }
   ): Promise<PrintResult> {
-    // 1. 优先原生模块
-    const printerLib = this.loadNativePrinter()
-    if (printerLib) {
-      try {
-        const ok = await new Promise<boolean>((resolve) => {
-          printerLib.printDirect({
-            data: data,
-            printer: printerName,
-            type: 'RAW',
-            success: () => resolve(true),
-            error: (err: unknown) => {
-              log.error('printDirect 失败:', err)
-              resolve(false)
-            }
-          })
-        })
-        if (ok) {
-          log.info(`printDirect 成功 [${printerName}]`)
-          return { kind: 'success' }
-        }
-        log.warn('printDirect 返回失败，回退到系统命令行')
-      } catch (e) {
-        log.error('printDirect 异常，回退系统命令:', e)
-      }
-    } else {
-      log.warn('@thiagoelg/node-printer 不可用，使用系统命令行 RAW 打印')
-    }
-
-    // 2. 系统命令行回退（macOS/Linux 内部会先尝试 USB 直写再 lp）
+    // 系统命令行 RAW（macOS/Linux 内部会先尝试 USB 直写再 lp，Windows 走 PowerShell RawPrinter）
     const cmdOk = await printRawViaCommand(printerName, data, options)
     if (cmdOk) {
       return { kind: 'success' }
     }
 
-    // 3. 全部失败：明确报错（不再用 silent 兜底，避免乱码）
+    // 全部失败：明确报错（不再用 silent 兜底，避免乱码）
     return {
       kind: 'error',
       reason: 'ioError',
       error: new Error(
-        `无可用 RAW 打印通道 [${printerName}]。请安装 npm install / npm run rebuild 编译 @thiagoelg/node-printer，`+
-        `或确认系统命令可用（macOS: lp；Windows: powershell）`
+        `无可用 RAW 打印通道 [${printerName}]。` +
+        `请确认系统命令可用（macOS: lp；Windows: powershell）或 USB 直写设备已连接`
       )
     }
   }
@@ -458,16 +428,6 @@ class PrintServiceImpl extends EventEmitter {
   }
 
   /* ==================== 原生模块懒加载 ==================== */
-
-  /** 懒加载 @thiagoelg/node-printer（驱动原始字节打印） */
-  private loadNativePrinter(): any {
-    try {
-      return require('@thiagoelg/node-printer')
-    } catch (e) {
-      log.warn('@thiagoelg/node-printer 模块未加载（开发机可能未编译）')
-      return null
-    }
-  }
 
   /** 懒加载 serialport */
   private loadSerialPort(): any {

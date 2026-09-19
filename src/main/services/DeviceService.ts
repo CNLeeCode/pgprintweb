@@ -19,18 +19,6 @@ try {
 }
 
 /**
- * @thiagoelg/node-printer 原生模块（懒加载）
- * 用于通过驱动直接发送 RAW 字节流到打印机，等价 KMP javax.print 的 AUTOSENSE 通道。
- * 开发机若未 electron-rebuild 编译会加载失败，此时回退到系统命令行（lp / powershell）。
- */
-let nativePrinterLib: any = null
-try {
-  nativePrinterLib = require('@thiagoelg/node-printer')
-} catch (e) {
-  log.warn('@thiagoelg/node-printer 模块未加载（开发机可能未编译，将回退系统命令行 RAW）')
-}
-
-/**
  * 构造打印测试用的 ESC/POS 字节流
  *
  * 设计意图：测试打印必须走与真实外卖小票【完全一致】的 RAW 字节流通道
@@ -39,7 +27,7 @@ try {
  *  1. 本项目打印机（如 Artery_CMD_ESCPO_Gprinter_iSH58）是 ESC/POS 热敏打印机，
  *     silent print 会把 HTML 经驱动渲染后发送，对 ESC/POS 打印机要么乱码要么
  *     无法识别，且 CUPS 队列里 job name 会显示成整段 data:text/html URL。
- *  2. silent print 通道与真实小票通道（printDirect RAW / lp -o raw）完全不同，
+ *  2. silent print 通道与真实小票通道（lp -o raw / PowerShell RawPrinter）完全不同，
  *     silent 成功不代表真实小票能打，验证无意义。
  *
  * 测试内容 1:1 移植 KMP 参考项目 `usb.kt` 的 `printImage2()` 完整外卖小票样张：
@@ -243,8 +231,9 @@ export const DeviceService = {
    * 打印测试：发送 ESC/POS 测试小票到指定打印机
    *
    * 通道优先级（与 PrintService.sendToPrinter / printViaDriver 完全一致）：
-   *  1. `@thiagoelg/node-printer` 的 printDirect（原生模块，最快最稳）
-   *  2. 系统命令行 RAW（macOS/Linux 优先 USB 直写绕过 CUPS / Windows PowerShell RawPrinter）
+   *  1. macOS/Linux 优先 USB 直写（绕过 CUPS PPD filter，最可靠）
+   *  2. 系统命令行 RAW（macOS lp -o raw / Windows PowerShell RawPrinter）
+   *     —— 等价 KMP 原版 `javax.print.PrintService` 的 RAW 打印通道
    *
    * 不使用 Electron silent print：silent 走 HTML 渲染通道，对 ESC/POS 热敏打印机
    * 会乱码，且 OS 打印队列里 job name 会显示成整段 `data:text/html,...` URL，
@@ -264,34 +253,7 @@ export const DeviceService = {
     const data = await buildTestReceipt()
     log.info(`testPrint ESC/POS 字节流 ${data.length} 字节，走 RAW 通道 [${printerName}]`)
 
-    // 2. 优先原生模块 printDirect（与真实小票打印同优先级）
-    if (nativePrinterLib) {
-      try {
-        const ok = await new Promise<boolean>((resolve) => {
-          nativePrinterLib.printDirect({
-            data: data,
-            printer: printerName,
-            type: 'RAW',
-            success: () => resolve(true),
-            error: (err: unknown) => {
-              log.error('testPrint printDirect 失败:', err)
-              resolve(false)
-            }
-          })
-        })
-        if (ok) {
-          log.info(`testPrint printDirect 成功 [${printerName}]`)
-          return true
-        }
-        log.warn('testPrint printDirect 返回失败，回退其他通道')
-      } catch (e) {
-        log.error('testPrint printDirect 异常，回退:', e)
-      }
-    } else {
-      log.warn('testPrint: @thiagoelg/node-printer 不可用')
-    }
-
-    // 3. macOS/Linux：优先 USB 直写（绕过 CUPS）
+    // 2. macOS/Linux：优先 USB 直写（绕过 CUPS PPD filter，最可靠通道）
     if (process.platform === 'darwin' || process.platform === 'linux') {
       const usbOk = await printRawViaUsb(printerName, data, options)
       if (usbOk) {
@@ -301,14 +263,14 @@ export const DeviceService = {
       log.warn('testPrint USB 直写失败，回退 lp -o raw')
     }
 
-    // 4. 系统命令行 RAW 回退（macOS lp / Windows powershell RawPrinter）
+    // 3. 系统命令行 RAW 回退（macOS lp / Windows powershell RawPrinter）
     const cmdOk = await printRawViaCommand(printerName, data, options)
     if (cmdOk) {
       log.info(`testPrint 系统命令 RAW 成功 [${printerName}]`)
       return true
     }
 
-    // 5. 全部 RAW 通道失败
+    // 4. 全部 RAW 通道失败
     log.error(`testPrint 全部 RAW 通道失败 [${printerName}]`)
     return false
   }

@@ -31,8 +31,8 @@
  *  3. 兼容用户从 CUPS 列表选 driver 类型的情况：尝试匹配系统打印机的 USB Vendor Name
  *     / Product Name 字段（"Gprinter" / "Artery" / "ESC" / "Receipt" 等关键词）。
  *
- * 这是 macOS/Linux 上 ESC/POS 字节流透传的最可靠通道；Windows 上仍优先
- * PowerShell RawPrinter（Win32 Spooler）和 @thiagoelg/node-printer。
+ * 这是 macOS/Linux 上 ESC/POS 字节流透传的最可靠通道；Windows 上优先
+ * PowerShell RawPrinter（Win32 Spooler），USB 直写作为跨平台兜底。
  */
 import log from 'electron-log/main'
 

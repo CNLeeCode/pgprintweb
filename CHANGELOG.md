@@ -1,5 +1,43 @@
 # 变更日志
 
+## [1.0.7] - 2026-09-19
+
+### 移除：移除两个 CI 编译失败的原生依赖
+
+#### 背景
+CI 构建持续失败，根因是两个原生模块在 Windows runner（Node 18.20.8）上无法编译：
+1. `@thiagoelg/node-printer@0.6.2` 无 Windows prebuild 二进制，回退 `node-gyp rebuild` 本地编译 C++ 失败（`npm error code 1`）。
+2. `better-sqlite3@12` 要求 Node 20+，Node 18.20.8 触发 EBADENGINE 警告，存在编译兼容风险。
+
+经核查，这两个模块在运行时均已无实际依赖：
+- `@thiagoelg/node-printer` 仅作为"优先通道"使用，失败已有系统命令行 RAW（macOS `lp -o raw` / Windows PowerShell `RawPrinter`）+ USB 直写兜底，移除后打印通道收敛为系统命令行 + USB 直写，更稳定。
+- `better-sqlite3` 仅存于孤立的 `DatabaseService.ts`（1.0.81 已被 `JsonStore.ts` 完全替代，无任何 import 引用），删除该死代码文件即可。
+
+#### 变更
+- `package.json`：
+  - 移除 `dependencies.better-sqlite3`
+  - 移除 `optionalDependencies.@thiagoelg/node-printer`（及整个 `optionalDependencies` 块）
+  - `rebuild` 脚本白名单 `serialport,usb,better-sqlite3` → `serialport,usb`
+- `src/main/services/DatabaseService.ts`：删除（死代码，1.0.81 起 `JsonStore` 已完全替代，无 import 引用）
+- `src/main/services/DeviceService.ts`：
+  - 移除顶部 `nativePrinterLib` try-require 加载块
+  - `testPrint` 删除"原生模块 printDirect"分支，通道收敛为 USB 直写 + 系统命令行
+- `src/main/services/PrintService.ts`：
+  - `printViaDriver` 删除"原生模块 printDirect"分支，三档优先级 → 两档
+  - 删除 `loadNativePrinter` 方法
+  - 更新 `sendToPrinter` 注释（移除 silent print / printDirect 提及）
+- `electron.vite.config.ts`：`external` 数组移除 `'better-sqlite3'` 和 `'@thiagoelg/node-printer'`
+- `electron-builder.yml`：更新 `npmRebuild` 注释说明
+- `.github/workflows/build-windows.yml`：更新步骤 5/6 注释
+- `src/main/utils/rawPrint.ts`、`src/main/utils/usbPrint.ts`：更新注释
+- `docs/KMP到Electron对照检查文档.md`：更新对照表
+
+#### 影响
+- CI `npm install` 不再因 `@thiagoelg/node-printer` 编译失败而中断
+- `better-sqlite3` 的 EBADENGINE 警告消除（依赖已移除）
+- 打印功能不受影响：RAW 字节流统一走系统命令行（lp / PowerShell RawPrinter）+ USB 直写
+- 数据持久化不受影响：`JsonStore`（基于 electron-store 的 JSON 文件）继续承担订单去重/待打印恢复
+
 ## [1.0.6] - 2026-09-19
 
 ### 修复：CI 原生模块编译失败（@thiagoelg/node-printer node-gyp 报错）

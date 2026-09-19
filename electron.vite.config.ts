@@ -9,7 +9,6 @@ export default defineConfig({
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
         external: [
-          'better-sqlite3',
           'serialport',
           'usb',
           'electron-store',
@@ -17,8 +16,7 @@ export default defineConfig({
           'node-thermal-printer',
           'bwip-js',
           'iconv-lite',
-          'pngjs',
-          '@thiagoelg/node-printer'
+          'pngjs'
         ]
       }
     },

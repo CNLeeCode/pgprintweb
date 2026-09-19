@@ -71,7 +71,7 @@
 
 ### 7. `print/PrintManager.kt`（1.68 KB）— 打印机底层封装
 - **KMP 职责**：封装 `javax.print`，`print(byteArray, printerName)` 发送字节流；`getPrinterList()` 枚举。
-- **Electron 对应**：`DeviceService.ts`（枚举）+ `PrintService.executePrint`（发送，用 `@thiagoelg/node-printer`）
+- **Electron 对应**：`DeviceService.ts`（枚举）+ `PrintService.executePrint`（发送，走系统命令行 RAW / USB 直写）
 - **状态**：⚠️
 - **差异**：底层打印机封装未独立成文件，内联在 PrintService 中。建议复核打印发送的 GBK 编码与串口端口处理。
 
@@ -163,7 +163,7 @@
 ### 48. `DatabaseManager.kt`（5.14 KB）— SQLite
 - **Electron 对应**：`src/main/services/DatabaseService.ts`（7.41 KB）
 - **状态**：✅
-- **差异**：KMP 用 SQLDelight，Electron 用 better-sqlite3。4 表结构一致，新增 `getPrintedOrders` 返回完整记录。
+- **差异**：KMP 用 SQLDelight，Electron 用 `JsonStore`（基于 electron-store 的 JSON 文件，1.0.81 起替代 better-sqlite3）。4 表结构一致，新增 `getPrintedOrders` 返回完整记录。
 
 ### 49. `PersistentCache.kt`（1.25 KB）— 缓存目录
 - **Electron 对应**：`DatabaseService`（`app.getPath('userData')`）+ `logger.ts` 日志路径
@@ -314,7 +314,7 @@
 ### 高优先级（影响核心功能正确性）
 
 1. **PrintService 轮询间隔与退款冷却**：确认 `POLLING_INTERVAL`（10 秒）与 `REFUND_SOUND_COOLDOWN`（6 秒）与 KMP `PrintTask.kt` 常量一致。
-2. **打印发送编码**：`PrintService.executePrint` 调用 `@thiagoelg/node-printer` 发送字节时，确认 GBK 编码字节流正确传递（中文字符不乱码）。
+2. **打印发送编码**：`PrintService.executePrint` 调用系统命令行 RAW（macOS `lp -o raw` / Windows PowerShell `RawPrinter`）或 USB 直写发送字节时，确认 GBK 编码字节流正确传递（中文字符不乱码）。
 3. **小票模板客服二维码**：`printTemplate.ts` 中客服图片位图转换是否完整（KMP 用 ResourceCache 加载，Electron 直接读文件）。
 4. **ApiService 响应字段映射**：snake_case→camelCase 拦截器是否覆盖所有订单字段（`refund_notice`→`refundNotice`、`day_seq`→`daySeq` 等）。
 
@@ -341,8 +341,8 @@
 | 状态管理 | StateFlow + Decompose | Zustand store | 等价，Electron 更细粒度 |
 | 路由 | Decompose childStack | React Router | 等价 |
 | HTTP | ktor | axios | 等价 |
-| 持久化 | DataStore + SQLDelight | electron-store + better-sqlite3 | 等价，Electron 同步 API |
-| 打印 | javax.print + escpos-coffee | @thiagoelg/node-printer + 自研 escpos | 等价，需 electron-rebuild |
+| 持久化 | DataStore + SQLDelight | electron-store + JsonStore | 等价，Electron 改用 JSON 文件存储 |
+| 打印 | javax.print + escpos-coffee | 系统命令行 RAW + 自研 escpos + USB 直写 | 等价，规避原生模块编译问题 |
 | 更新 | Velopack | electron-updater | 方案不同，均兼容 Win7 |
 | 音频 | Java Audio（主进程侧） | HTML5 Audio（渲染层） | 位置不同，冷却移至主进程 |
 | 崩溃 | Thread.UncaughtExceptionHandler | process.on + crashReporter | 等价 |
