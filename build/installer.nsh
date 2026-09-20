@@ -26,7 +26,7 @@
 ; 路径说明：
 ;   - $INSTDIR                   安装目录（如 C:\Program Files\pgprinter）
 ;   - ${APP_EXECUTABLE_FILENAME} 主程序文件名（pgprinter.exe，electron-builder 注入）
-;   - ${APP_PRODUCT_NAME}        产品名（pgprinter，对应 productName）
+;   - ${APP_FILENAME}            安装目录/快捷方式名（pgprinter，electron-builder 注入）
 ;   - ${SHORTCUT_NAME}           快捷方式名（pgprinter，对应 nsis.shortcutName）
 ;   - $DESKTOP                   桌面目录
 ;   - $SMPROGRAMS                开始菜单顶级目录
@@ -55,9 +55,9 @@
 
   ; ----- 开始菜单快捷方式 -----
   ; 创建子目录后写入同名 .lnk，对应 productName 子目录
-  CreateDirectory "$SMPROGRAMS\${APP_PRODUCT_NAME}"
+  CreateDirectory "$SMPROGRAMS\${APP_FILENAME}"
   CreateShortCut \
-    "$SMPROGRAMS\${APP_PRODUCT_NAME}\${SHORTCUT_NAME}.lnk" \
+    "$SMPROGRAMS\${APP_FILENAME}\${SHORTCUT_NAME}.lnk" \
     "$INSTDIR\${APP_EXECUTABLE_FILENAME}" \
     "" "" 0
 !macroend
