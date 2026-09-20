@@ -23,6 +23,13 @@ applyWin7CompatPatches()
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  // 运行时窗口/任务栏图标：
+  // - 打包后：extraResources 把 resources/ 拷到 process.resourcesPath/resources/
+  // - 开发环境：项目根 resources/icon.ico
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'resources', 'icon.ico')
+    : join(__dirname, '../../resources/icon.ico')
+
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -30,6 +37,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     title: `比优特到家小票打印系统 V${app.getVersion()}`,
     backgroundColor: '#F2F2F2',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

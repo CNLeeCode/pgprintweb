@@ -19,7 +19,9 @@ asarUnpack:
   - "**/*.{node,dll}"
 win:
   target: nsis
-  icon: build/icon.ico
+  # 图标在 resources/icon.ico（6 尺寸：16/32/48/64/128/256）
+  # 用于：exe 文件图标、安装包图标、桌面/开始菜单快捷方式图标
+  icon: resources/icon.ico
   requestedExecutionLevel: asInvoker
   # Win7 兼容：不使用 differentialDownload 增量更新
 nsis:
