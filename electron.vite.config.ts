@@ -20,14 +20,27 @@ import react from '@vitejs/plugin-react'
  * 修复：构建时 loadEnv 读取 .env/.env.[mode]，把所有变量通过 define
  * 静态替换为字面字符串，确保打包后 main/preload 仍能读到 .env 的值。
  *
+ * ⚠️ Windows 兼容：loadEnv 第三参数传空串会合并 process.env，Windows runner
+ * 上有 ProgramFiles(x86)、CommonProgramFiles(x86) 等带括号的系统变量名，
+ * 不是合法 JS 标识符，esbuild 在 define 阶段会报
+ * "invalid identifier" 导致构建失败。
+ * 因此用 VALID_IDENTIFIER 正则过滤，只保留合法标识符 key。
+ *
  * @param mode 构建模式（development / production）
  * @returns define 表，形如 { 'process.env.VITE_DOMAIN_URL': '"http://..."' }
  */
+
+/** 合法 JS 标识符正则：字母/$/_ 开头，后跟字母/数字/$/_ */
+const VALID_IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+
 function buildEnvDefines(mode: string): Record<string, string> {
   // prefixes 传空串表示加载所有变量（不只是 VITE_ 前缀）
   const env = loadEnv(mode, process.cwd(), '')
   const defines: Record<string, string> = {}
   for (const key of Object.keys(env)) {
+    // 跳过非合法标识符的 key（如 Windows 的 ProgramFiles(x86)），
+    // 避免 esbuild define 阶段 "invalid identifier" 报错
+    if (!VALID_IDENTIFIER.test(key)) continue
     defines[`process.env.${key}`] = JSON.stringify(env[key])
   }
   return defines
