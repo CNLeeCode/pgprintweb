@@ -2,8 +2,9 @@
  * 全局配置常量（对应 KMP BuildConfig + config）
  */
 
-// 应用版本（与 KMP 1.0.71 对齐）
-export const APP_VERSION = process.env.VITE_APP_VERSION || '1.0.71'
+// 应用版本（与 package.json version 字段对齐，由 VITE_APP_VERSION 环境变量覆盖）
+// 不再与 KMP 版本号对齐 —— Electron 端独立发版，版本号自成一套
+export const APP_VERSION = process.env.VITE_APP_VERSION || '1.0.1'
 
 // 后端域名
 export const DOMAIN_URL = process.env.VITE_DOMAIN_URL || 'http://<生产域名>'
@@ -67,10 +68,13 @@ export const HTTP_TIMEOUT = 30_000
  *     }
  *   }
  *
- * 判定规则（后端控制，前端不再做版本号比较）：
- *   - code !== 200              → 无新版本，接口异常按"已最新"处理不阻断启动
- *   - code === 200 且 download_url 为空 → 无新版本
- *   - code === 200 且 download_url 非空 → 有新版本，按 download_url 下载并安装
+ * 判定规则（前端 + 后端双保险）：
+ *   - code !== 200                              → 无新版本，接口异常按"已最新"处理不阻断启动
+ *   - code === 200 且 version <= APP_VERSION    → 无新版本
+ *   - code === 200 且 download_url 为空         → 无新版本
+ *   - code === 200 且 version > APP_VERSION 且 download_url 非空 → 有新版本
+ *
+ * 版本比较按点分段转 number（非字符串字典序比较），避免 "1.0.71" < "1.0.8" 误判。
  *
  * 兼容老环境名 VITE_UPDATE_CHECK_URL（避免历史部署遗漏）。
  */

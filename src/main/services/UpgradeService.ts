@@ -66,6 +66,42 @@ function getHttp(url: string): typeof httpGet {
   return httpsGet
 }
 
+/**
+ * 语义化版本号比较（支持 "1.0" / "1.0.1" / "1.2.3" 等点分格式）
+ *
+ * 返回值：
+ *   > 0 → a > b
+ *   = 0 → a === b
+ *   < 0 → a < b
+ *
+ * 为什么要按点分段转 number 再比，而不是直接字符串比较？
+ *   字符串字典序比较会得到 "1.0.71" < "1.0.8" 的错误结果
+ *   （因为按字符逐位比，"7" < "8"），但实际 71 > 8。
+ *   所以必须 split('.') 后每段 parseInt 转 number 逐段比较。
+ *
+ * 长度不一致时短的补 0 对齐：
+ *   "1.0" vs "1.0.1" → [1,0,0] vs [1,0,1] → -1 (有新版本)
+ *
+ * 非数字段（如 "1.0.0-beta" 中的 "0-beta"）parseInt 得 NaN，
+ * 用 || 0 兜底；纯数字版本号场景够用。
+ *
+ * @param a 版本号字符串（如远程 "1.0.2"）
+ * @param b 版本号字符串（如本地 APP_VERSION "1.0.1"）
+ */
+function compareVersion(a: string, b: string): number {
+  const pa = String(a).split('.').map((s) => parseInt(s, 10) || 0)
+  const pb = String(b).split('.').map((s) => parseInt(s, 10) || 0)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const na = pa[i] || 0
+    const nb = pb[i] || 0
+    if (na !== nb) {
+      return na - nb
+    }
+  }
+  return 0
+}
+
 /** 下载进度信息 */
 export interface DownloadProgress {
   /** 百分比 0-100 */
@@ -97,15 +133,18 @@ class UpgradeServiceImpl extends EventEmitter {
   private currentReq: ReturnType<typeof httpGet> | ReturnType<typeof httpsGet> | null = null
 
   /**
-   * 检查更新（主流程：调接口 + 按 downloadUrl 判定 + 广播结果）
+   * 检查更新（主流程：调接口 + 版本比对 + 广播结果）
    *
-   * 判定规则（由后端控制，前端不做版本号比较）：
+   * 判定规则（前端 + 后端双保险，前端做语义化版本比较）：
    *   - 接口请求失败 / code !== 200 → 无新版本（按"已最新"处理，不阻断启动）
+   *   - code === 200 且 version <= APP_VERSION → 无新版本
    *   - code === 200 且 downloadUrl 为空 → 无新版本
-   *   - code === 200 且 downloadUrl 非空 → 有新版本，按 downloadUrl 下载安装
+   *   - code === 200 且 version > APP_VERSION 且 downloadUrl 非空 → 有新版本
    *
-   * 说明：后端通过是否下发 download_url 来控制是否有新版本，前端无需关注
-   * version 字段的具体值，避免本地与后端版本号格式不一致导致的误判。
+   * 版本比较采用语义化比较（按点分段转 number 逐段比对）：
+   *   - 字符串字典序比较会得到 "1.0.71" < "1.0.8" 的错误结果
+   *     （按字符逐位比，"7" < "8"），但实际 71 > 8
+   *   - split('.') 后每段 parseInt 转 number 比较才正确
    *
    * @returns 检查到的更新信息（无新版本或失败时为 null）
    */
@@ -142,13 +181,24 @@ class UpgradeServiceImpl extends EventEmitter {
       return null
     }
 
-    // 核心判定：downloadUrl 非空 → 有新版本；为空 → 无新版本
-    if (info.downloadUrl && info.downloadUrl.trim()) {
+    // 核心判定（双条件 AND，前端 + 后端双保险）：
+    //   1. 接口返回的 version 严格大于本地 APP_VERSION（语义化比较，非字符串比较）
+    //      - "1.0.71" vs "1.0.8" 字符串比较会判错（"71" < "8" 按字典序）
+    //      - 必须按点分段转 number 逐段比较：[1,0,71] vs [1,0,8] → 71>8 正确
+    //   2. downloadUrl 非空（双保险，后端忘配置地址也不能升级）
+    // 任一条件不满足都按"无新版本"处理。
+    const remoteVersion = (info.version || '').trim()
+    const localVersion = APP_VERSION
+    const versionGreater =
+      remoteVersion !== '' && compareVersion(remoteVersion, localVersion) > 0
+    const hasDownloadUrl = !!info.downloadUrl && !!info.downloadUrl.trim()
+
+    if (versionGreater && hasDownloadUrl) {
       this.updateInfo = info
       this.setStatus('available')
       this.emit('update-available', info)
       log.info(
-        `升级检查：发现新版本 ${info.version || '(未知)'}，下载地址 ${info.downloadUrl}，强制更新=${info.forceUpdate}`
+        `升级检查：发现新版本 ${remoteVersion} > 本地 ${localVersion}，下载地址 ${info.downloadUrl}，强制更新=${info.forceUpdate}`
       )
 
       // 自动下载策略：检测到新版本立即后台下载（静默不打扰用户）
@@ -161,10 +211,13 @@ class UpgradeServiceImpl extends EventEmitter {
       }
       return info
     } else {
-      // downloadUrl 为空 → 后端表示无新版本
+      // 无新版本：区分两种原因便于排查
+      const reason = !versionGreater
+        ? `版本未升级（远端 ${remoteVersion || '(空)'} <= 本地 ${localVersion}）`
+        : `下载地址为空（version=${remoteVersion}）`
       this.setStatus('idle')
       this.emit('update-not-available', info)
-      log.info('升级检查：已是最新版本（downloadUrl 为空）', info.version)
+      log.info(`升级检查：已是最新版本，${reason}`)
       return null
     }
   }

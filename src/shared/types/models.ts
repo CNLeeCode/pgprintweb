@@ -105,9 +105,12 @@ export interface ShopPrintOrderDetail {
  * axios 响应拦截器自动把 snake_case 转 camelCase：
  *   download_url → downloadUrl / update_msg → updateMsg / force_update → forceUpdate
  *
- * 判定规则（接口控制，前端不做版本号比较）：
- *   code===200 且 downloadUrl 非空 → 有新版本
+ * 判定规则（前端 + 后端双保险，前端做语义化版本比较）：
+ *   code === 200 且 version > APP_VERSION 且 downloadUrl 非空 → 有新版本
  *   其它情况 → 无新版本
+ *
+ * 版本比较按点分段转 number 进行（非字符串字典序比较），
+ * 避免 "1.0.71" < "1.0.8" 的字典序误判。
  */
 export interface AppUpdateInfo {
   /** 应用名（PG-PRINTER），仅用于鉴权/校验，UI 不展示 */
