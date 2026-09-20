@@ -1,5 +1,42 @@
 # 变更日志
 
+## [1.0.17] - 2026-09-20
+
+### 修复：打包后 .env 配置不生效，Splash 一直显示"检查更新失败"
+
+#### 症状
+- 进应用首屏 Splash 显示"检查更新失败"，诊断报告显示 `<生产域名>` 的 `getPlatformList` 接口能正常返回（HTTP 200 平台数=8），但更新检查仍失败
+- `.env` 已配置 `VITE_UPDATE_SERVER_URL=http://<更新服务IP>/index.php/Home/<接口前缀名>/getWebPgPrintUpdateInfo`，但完全没生效
+
+#### 根因
+`electron.vite.config.ts` 中 `main` / `preload` 配置块没有 `define`，electron-vite 2.x 不会自动把 `.env` 中的 `VITE_*` 变量静态替换到打包产物里，而是保留 `process.env.VITE_X` 运行时表达式。
+
+- dev 模式下 electron-vite 启动脚本会把 `.env` 注入 `process.env` → 能读到值
+- **打包后** 运行的是 asar 内的 main bundle，Node 主进程 `process.env` 是宿主系统环境变量，根本没有 `VITE_*` 这些值 → 全部走 `config.ts` 里的 `|| fallback` 默认值
+
+实际生效情况：
+| 变量 | `.env` 配置 | 实际生效（打包后） |
+|---|---|---|
+| `VITE_DOMAIN_URL` | `http://<生产域名>` | fallback `http://<生产域名>`（恰好一致 → `getPlatformList` 200）|
+| `VITE_UPDATE_SERVER_URL` | `http://<更新服务IP>/...` | **fallback `http://<生产域名>/.../getWebPgPrintUpdateInfo`** |
+
+→ <更新服务IP> 根本没被请求，请求打到 `<生产域名>/getWebPgPrintUpdateInfo` 这个不存在的接口 → 404/500 → axios 抛错 → `getAppUpdateInfo` 返回 null → `UpgradeService.checkForUpdates` 走 error 分支 → Splash 显示"检查更新失败"
+
+诊断报告里 `getPlatformList` 能通 ≠ `getWebPgPrintUpdateInfo` 能通，因为 fallback 后两个接口都打到同一个域名但不同路径，前者存在后者不存在。
+
+#### 修复
+1. **`electron.vite.config.ts`**：改函数式 `defineConfig(({ mode }) => {...})`，函数内 `loadEnv(mode, process.cwd(), '')` 读取所有 `.env` 变量，构造 `{ 'process.env.VITE_X': JSON.stringify(value) }` 映射，分别注入到 `main.define` 和 `preload.define`，确保打包后 `process.env.VITE_*` 被静态替换为字面字符串
+2. **`src/main/index.ts`**：启动期输出 `[config] APP_VERSION / DOMAIN_URL / API_BASE_URL / UPDATE_CHECK_URL` 实际值，看 `main.log` 开头即可确认 `.env` 是否生效
+
+#### 验证
+打包后检查 `out/main/index.js`：
+- 修复前：`const UPDATE_CHECK_URL = process.env.VITE_UPDATE_SERVER_URL || process.env.VITE_UPDATE_CHECK_URL || ...`
+- 修复后：`const UPDATE_CHECK_URL = "http://<更新服务IP>/index.php/Home/<接口前缀名>/getWebPgPrintUpdateInfo";`（静态值，运行时不再读 `process.env`）
+
+#### 涉及文件
+- `electron.vite.config.ts`：新增 `buildEnvDefines` + `define` 静态注入
+- `src/main/index.ts`：启动日志输出 4 个关键配置实际值
+
 ## [1.0.16] - 2026-09-20
 
 ### 文档：完善项目交接文档

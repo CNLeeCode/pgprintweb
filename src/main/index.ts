@@ -7,7 +7,19 @@ import { initLogger } from './utils/logger'
 import { initCrashReporter } from './utils/crash'
 import { JsonStore as DatabaseService } from './services/JsonStore'
 import { registerAllIpc } from './ipc'
-import { WINDOW_WIDTH, WINDOW_HEIGHT } from './config'
+import { WINDOW_WIDTH, WINDOW_HEIGHT, UPDATE_CHECK_URL, DOMAIN_URL, API_BASE_URL, APP_VERSION } from './config'
+
+/**
+ * 启动期一次性输出关键配置实际值，便于排错（曾出现 .env 配置未注入导致全走 fallback 的事故）
+ *
+ * 看 main.log 开头这几行就能立刻确认 .env 是否生效：
+ *   - 若更新地址显示 <生产域名>/.../getWebPgPrintUpdateInfo → 环境变量未注入（走 fallback）
+ *   - 若显示 <更新服务IP> / 其他配置地址 → 注入正常
+ */
+log.info('[config] APP_VERSION=', APP_VERSION)
+log.info('[config] DOMAIN_URL=', DOMAIN_URL)
+log.info('[config] API_BASE_URL=', API_BASE_URL)
+log.info('[config] UPDATE_CHECK_URL=', UPDATE_CHECK_URL)
 
 // ⚠️ Win7 兼容：强制 DNS 解析优先 IPv4
 // Node 16 默认 dns.lookup 行为在 Win7 上可能优先返回 IPv6 (AAAA 记录)，
