@@ -38,6 +38,22 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 // Win7 兼容补丁必须在 app.ready 之前应用
 applyWin7CompatPatches()
 
+/**
+ * 检测应用是否由 installer 静默升级后自动启动.
+ *
+ * build/installer.nsh 的 customInstall 宏在 /S 静默模式 + --updated 标志双条件
+ * 检测通过后, 用 ExecShell 启动新 exe 并透传 --updated 参数 (与 electron-builder
+ * 内部 StartApp 宏约定一致, common.nsh:123-132).
+ *
+ * 通过 process.argv 检测该参数, 用途:
+ *   1. 升级成功提示弹窗 (见 createWindow ready-to-show 回调)
+ *   2. 后续可扩展: 跳过首次启动引导页、上报升级日志给后端等
+ *
+ * 注意: 首次安装走向导模式点"完成"按钮启动时不会带 --updated,
+ * 只有升级路径 (/S --updated 静默升级) 才带, 语义清晰.
+ */
+const IS_LAUNCHED_BY_UPDATER = process.argv.includes('--updated')
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -66,6 +82,37 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+
+    // ===== 升级启动提示 =====
+    // installer.nsh 静默升级装完后 ExecShell 启动新 exe 时透传 --updated 参数,
+    // 这里检测到该参数后弹 "已成功升级到 vX.X.X" 提示, 告知用户升级完成.
+    //
+    // 设计考量:
+    //   - 不阻断启动主流程: dialog.showMessageBox 异步 + 模态到 parent window,
+    //     主窗口 UI 已渲染完成, 用户点确定关闭后焦点回到应用, 期间后台 IPC/打印
+    //     服务照常运行.
+    //   - setTimeout 500ms 等 UI 完全渲染再弹, 避免窗口刚 show 就被 dialog 盖住
+    //     导致用户先看到空白窗口再弹提示, 观感差.
+    //   - dialog 错误吞掉记日志, 不让 unhandledRejection 影响应用稳定性.
+    if (IS_LAUNCHED_BY_UPDATER) {
+      log.info('[升级启动] 应用由 installer 静默升级后启动 (--updated)')
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return
+        }
+        dialog
+          .showMessageBox(mainWindow, {
+            type: 'info',
+            title: '升级成功',
+            message: `已成功升级到 v${APP_VERSION}`,
+            buttons: ['确定'],
+            noLink: true,
+          })
+          .catch((e: unknown) => {
+            log.error('升级启动弹窗失败:', e)
+          })
+      }, 500)
+    }
   })
 
   // ===== 调试：F12 / Ctrl+Shift+I 打开 DevTools =====
