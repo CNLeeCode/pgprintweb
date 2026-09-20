@@ -45,6 +45,8 @@ const fallback: ElectronAPI = {
   requeuePending: () => Promise.resolve(),
   loadPrinted: () => Promise.resolve(),
   getPrintSnapshots: () => Promise.resolve({ printed: {}, pending: {} }),
+  /** 失败订单快照 fallback：preload 未注入时返回空对象（无失败订单） */
+  getFailed: () => Promise.resolve({} as Record<string, Record<string, true>>),
   reprintOrder: () => Promise.resolve(false),
   startNetworkCheck: () => Promise.resolve(),
   stopNetworkCheck: () => Promise.resolve(),

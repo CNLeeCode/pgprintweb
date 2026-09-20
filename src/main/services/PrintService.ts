@@ -65,6 +65,8 @@ class PrintServiceImpl extends EventEmitter {
   private pendingMap: Record<string, Record<string, ShopPrintOrderItem>> = {}
   /** 运行时重试计数（orderKey -> count） */
   private retryMap = new Map<string, number>()
+  /** 打印失败（重试超限）订单 key 集合，防轮询重复入队死循环 + 供 UI 标红可重打 */
+  private failedSet = new Set<string>()
   /** 当前选中打印机目标（从 StoreService 读取） */
   private currentDevice: PrinterTarget | null = null
   /** 轮询任务 Map（platformId -> timer） */
@@ -103,10 +105,11 @@ class PrintServiceImpl extends EventEmitter {
     this.pendingMap = {}
     this.printedMap = {}
     this.retryMap.clear()
+    this.failedSet.clear()
     this.processing = false
     this.printing = false
     log.info(
-      `resetRuntimeState 已清空运行时状态：queue=${queueLen} printingSet=${printingLen} pendingMap/printedMap/retryMap 已清空（切换门店或重置场景）`
+      `resetRuntimeState 已清空运行时状态：queue=${queueLen} printingSet=${printingLen} pendingMap/printedMap/retryMap/failedSet 已清空（切换门店或重置场景）`
     )
     // 广播快照刷新，让 UI 立即清空旧门店的已打印/待打印列表
     this.emit('printed-updated', this.getPrintedSnapshot())
@@ -242,6 +245,8 @@ class PrintServiceImpl extends EventEmitter {
         this.retryMap.delete(orderKey(detail.platform, detail.orderId))
         log.info(`打印成功 [${detail.orderId}]`)
         this.emit('printed', detail.platform, { orderId: detail.orderId, daySeq: detail.daySeq })
+        // BUGFIX: 成功分支曾遗漏 printed-updated 广播，导致前端已打印区不刷新
+        this.emit('printed-updated', this.getPrintedSnapshot())
         this.emit('pending-updated', this.getPendingSnapshot())
       } else {
         // 打印失败：重试逻辑
@@ -258,9 +263,14 @@ class PrintServiceImpl extends EventEmitter {
           )
           this.queue.push(detail)
         } else {
-          log.error(`订单 [${detail.orderId}] 重试 ${retryCount} 次仍失败，保留待打印`)
+          log.error(`订单 [${detail.orderId}] 重试 ${retryCount} 次仍失败，标记为失败可重打`)
           this.printingSet.delete(key)
           this.retryMap.delete(key)
+          // BUGFIX: 重试超限后加入 failedSet，阻止轮询重复入队死循环 + 供前端标红可重打
+          this.failedSet.add(key)
+          // BUGFIX: 触发 pending-updated 清掉待打印区该订单，failed-updated 通知前端标红
+          this.emit('pending-updated', this.getPendingSnapshot())
+          this.emit('failed-updated', this.getFailedSnapshot())
         }
       }
     } catch (e) {
@@ -450,6 +460,8 @@ class PrintServiceImpl extends EventEmitter {
     platformMap[detail.orderId] = item
     this.printedMap[platformId] = platformMap
     this.printingSet.delete(key)
+    // BUGFIX: 打印成功后清理失败标记，避免 failedSet 残留导致后续轮询继续过滤该订单
+    this.failedSet.delete(key)
   }
 
   /** 添加待打印订单到内存缓存（UI 显示用） */
@@ -476,16 +488,38 @@ class PrintServiceImpl extends EventEmitter {
     return JSON.parse(JSON.stringify(this.printedMap))
   }
 
+  /**
+   * 获取失败订单快照（供 UI 标红渲染 + failed-updated 事件）
+   * 返回 platformId -> orderId -> true 的嵌套结构，便于前端按平台分组判断
+   */
+  getFailedSnapshot(): Record<string, Record<string, true>> {
+    const snapshot: Record<string, Record<string, true>> = {}
+    for (const key of this.failedSet) {
+      // failedSet 内 key 形如 "platformId_orderId"（orderKey 拼接规则）
+      const sepIdx = key.lastIndexOf('_')
+      if (sepIdx <= 0) continue
+      const platformId = key.slice(0, sepIdx)
+      const orderId = key.slice(sepIdx + 1)
+      if (!snapshot[platformId]) snapshot[platformId] = {}
+      snapshot[platformId][orderId] = true
+    }
+    return snapshot
+  }
+
   /* ==================== 去重过滤 ==================== */
 
   /**
-   * 双重过滤：排除已打印 + 正在打印中的订单
+   * 双重过滤：排除已打印 + 正在打印中的订单 + 已失败（重试超限）订单
    * 对应 KMP filterUnprinted
+   * BUGFIX: 增加 failedSet 过滤，避免轮询将重试超限的失败订单反复入队导致日志爆炸
    */
   filterUnprinted(platformId: string, orders: ShopPrintOrderItem[]): ShopPrintOrderItem[] {
     const printed = this.printedMap[platformId] || {}
     return orders.filter(
-      (o) => !printed[o.orderId] && !this.printingSet.has(orderKey(platformId, o.orderId))
+      (o) =>
+        !printed[o.orderId] &&
+        !this.printingSet.has(orderKey(platformId, o.orderId)) &&
+        !this.failedSet.has(orderKey(platformId, o.orderId))
     )
   }
 

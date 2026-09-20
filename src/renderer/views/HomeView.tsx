@@ -49,6 +49,7 @@ export default function HomeView() {
   const currentPrinterId = useDeviceStore((s) => s.currentPrinterId)
   const printedMap = usePrintStore((s) => s.printedMap)
   const pendingMap = usePrintStore((s) => s.pendingMap)
+  const failedMap = usePrintStore((s) => s.failedMap)
   const networkStatus = useNetworkStore((s) => s.status)
   const updateStatus = useUpdateStore((s) => s.status)
   const latestVersion = useUpdateStore((s) => s.version)
@@ -244,6 +245,7 @@ export default function HomeView() {
             platforms={checkedPlatforms}
             printedMap={printedMap}
             pendingMap={pendingMap}
+            failedMap={failedMap}
             shopId={shopId}
             onPrintDoc={onPrintDoc}
           />

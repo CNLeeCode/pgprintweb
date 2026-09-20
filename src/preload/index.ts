@@ -162,6 +162,11 @@ const api = {
   requeuePending: (shopId?: string) => ipcRenderer.invoke('print:requeue', shopId),
   loadPrinted: (shopId?: string) => ipcRenderer.invoke('print:loadPrinted', shopId),
   getPrintSnapshots: () => ipcRenderer.invoke('print:getSnapshots'),
+  /**
+   * 拉取失败（重试超限）订单快照（对应 PrintService.getFailedSnapshot）
+   * 返回 platformId -> orderId -> true 的嵌套结构，渲染层按平台分组标红。
+   */
+  getFailed: () => ipcRenderer.invoke('print:getFailed'),
   reprintOrder: (platformId: string, shopId: string, orderId: string) =>
     ipcRenderer.invoke('print:reprint', platformId, shopId, orderId),
   /** 网络检查 */

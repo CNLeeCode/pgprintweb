@@ -33,6 +33,7 @@ import type { ShopPrintOrderItem, PrinterTarget } from '@shared/types/models'
  *  - print:refund-notice  退款通知（触发提示音）
  *  - print:printed-updated 已打印快照变更
  *  - print:pending-updated 待打印快照变更
+ *  - print:failed-updated 失败（重试超限）订单快照变更（供 UI 标红可重打）
  */
 export function registerPrintIpc(getMainWindow: () => Electron.BrowserWindow | null): void {
   // 事件转发到渲染进程
@@ -50,6 +51,10 @@ export function registerPrintIpc(getMainWindow: () => Electron.BrowserWindow | n
   })
   PrintService.on('pending-updated', (snap: Record<string, Record<string, ShopPrintOrderItem>>) => {
     getMainWindow()?.webContents.send('print:pending-updated', snap)
+  })
+  // BUGFIX: 新增 failed-updated 事件转发，让渲染进程感知重试超限的失败订单并标红
+  PrintService.on('failed-updated', (snap: Record<string, Record<string, true>>) => {
+    getMainWindow()?.webContents.send('print:failed-updated', snap)
   })
 
   /* ---------- 设备绑定 ---------- */
@@ -146,6 +151,10 @@ export function registerPrintIpc(getMainWindow: () => Electron.BrowserWindow | n
     printed: PrintService.getPrintedSnapshot(),
     pending: PrintService.getPendingSnapshot()
   }))
+
+  /* ---------- 失败订单快照查询 ---------- */
+  // BUGFIX: 新增 print:getFailed 通道，供渲染进程按需拉取失败订单快照（标红/可重打）
+  ipcMain.handle('print:getFailed', () => PrintService.getFailedSnapshot())
 
   /* ---------- 手动重打 ---------- */
   ipcMain.handle(

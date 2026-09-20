@@ -7,6 +7,8 @@ interface PlatformGridProps {
   platforms: PrintPlatform[]
   printedMap: Record<string, Record<string, ShopPrintOrderItem>>
   pendingMap: Record<string, Record<string, ShopPrintOrderItem>>
+  /** 失败（重试超限）订单 Map<platformId, Map<orderId, true>> */
+  failedMap: Record<string, Record<string, true>>
   shopId: string
   onPrintDoc: (platformId: string, orderId: string) => void
 }
@@ -16,6 +18,7 @@ export default function PlatformGrid({
   platforms,
   printedMap,
   pendingMap,
+  failedMap,
   shopId,
   onPrintDoc
 }: PlatformGridProps) {
@@ -85,6 +88,7 @@ export default function PlatformGrid({
       {platforms.map((p) => {
         const printed = printedMap[p.id] || {}
         const pending = pendingMap[p.id] || {}
+        const failed = failedMap[p.id] || {}
         const printedCount = Object.keys(printed).length
         const pendingCount = Object.keys(pending).length
         return (
@@ -95,6 +99,7 @@ export default function PlatformGrid({
             printedCount={printedCount}
             pending={pending}
             printed={printed}
+            failed={failed}
             onReprint={(orderId) => onPrintDoc(p.id, orderId)}
             onCopy={copy}
           />
@@ -117,6 +122,7 @@ interface ItemProps {
   printedCount: number
   pending: Record<string, ShopPrintOrderItem>
   printed: Record<string, ShopPrintOrderItem>
+  failed: Record<string, true>
   onReprint: (orderId: string) => void
   onCopy: (text: string) => void
 }
@@ -127,6 +133,7 @@ function PlatformGridItem({
   printedCount,
   pending,
   printed,
+  failed,
   onReprint,
   onCopy
 }: ItemProps) {
@@ -199,6 +206,7 @@ function PlatformGridItem({
             textColor={AppColors.pendingOrange}
             orders={pending}
             pending
+            failed={failed}
             onReprint={onReprint}
             onCopy={onCopy}
           />
@@ -209,6 +217,7 @@ function PlatformGridItem({
             bgColor="#E8F5E9"
             textColor={AppColors.successGreen}
             orders={printed}
+            failed={{}}
             onReprint={onReprint}
             onCopy={onCopy}
           />
@@ -229,11 +238,13 @@ interface SectionProps {
   textColor: string
   orders: Record<string, ShopPrintOrderItem>
   pending?: boolean
+  /** 失败订单集合（同平台下 orderId -> true），仅 pending 区用于标红与重打入口 */
+  failed?: Record<string, true>
   onReprint: (orderId: string) => void
   onCopy: (text: string) => void
 }
 
-function SectionRow({ label, bgColor, textColor, orders, pending, onReprint, onCopy }: SectionProps) {
+function SectionRow({ label, bgColor, textColor, orders, pending, failed, onReprint, onCopy }: SectionProps) {
   const list = Object.values(orders)
   return (
     <Box>
@@ -241,7 +252,10 @@ function SectionRow({ label, bgColor, textColor, orders, pending, onReprint, onC
         <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: textColor }} />
         <Typography sx={{ fontSize: 11, fontWeight: 600, color: textColor }}>{label}</Typography>
       </Box>
-      {list.map((o) => (
+      {list.map((o) => {
+        // BUGFIX: 待打印区若该订单在 failed 集合中，视为失败订单：标红 + 提供重打入口
+        const isFailed = !!(pending && failed && failed[o.orderId])
+        return (
         <Stack
           key={o.orderId}
           direction="row"
@@ -250,12 +264,16 @@ function SectionRow({ label, bgColor, textColor, orders, pending, onReprint, onC
           sx={{
             px: 1,
             py: 0.5,
+            // 失败订单整行标红，提示用户需重打
+            bgcolor: isFailed ? '#FFEBEE' : 'transparent',
             transition: 'background-color .15s',
-            '&:hover': { bgcolor: AppColors.headerBackground }
+            '&:hover': { bgcolor: isFailed ? '#FFCDD2' : AppColors.headerBackground }
           }}
         >
-          <Typography sx={{ fontSize: 13, fontWeight: 500 }}>#{o.daySeq}</Typography>
-          {!pending && (
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: isFailed ? '#C62828' : undefined }}>
+            #{o.daySeq}
+          </Typography>
+          {(!pending || isFailed) && (
             <Stack direction="row" spacing={0.5}>
               <Button
                 size="small"
@@ -266,9 +284,9 @@ function SectionRow({ label, bgColor, textColor, orders, pending, onReprint, onC
                   height: 22,
                   fontSize: 11,
                   p: 0,
-                  color: AppColors.primary,
-                  borderColor: AppColors.primary + '60',
-                  '&:hover': { borderColor: AppColors.primary, bgcolor: AppColors.primary + '10' }
+                  color: isFailed ? '#C62828' : AppColors.primary,
+                  borderColor: (isFailed ? '#C62828' : AppColors.primary) + '60',
+                  '&:hover': { borderColor: isFailed ? '#C62828' : AppColors.primary, bgcolor: (isFailed ? '#C62828' : AppColors.primary) + '10' }
                 }}
               >
                 重打
@@ -292,7 +310,8 @@ function SectionRow({ label, bgColor, textColor, orders, pending, onReprint, onC
             </Stack>
           )}
         </Stack>
-      ))}
+        )
+      })}
     </Box>
   )
 }

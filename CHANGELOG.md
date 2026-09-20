@@ -1,5 +1,60 @@
 # 变更日志
 
+## [1.0.1] - 2026-09-20（打印状态广播修复 + 升级流程测试版）
+
+> 说明：本次发版目的有二：①修复打印订单状态不刷新 / 失败订单轮询死循环等 4 个核心 BUG；②将 package.json 版本号从 1.0.0 提升到 1.0.1，用于在 Win7 真机测试 electron-builder 升级流程（1.0.0 已安装 → 1.0.1 可升级）。与下方 2026-09-19 的历史 [1.0.1]（打包配置调整）为不同发版，此处为最新一次。
+
+### 修复：4 个打印状态同步 / 失败处理核心 BUG
+
+#### BUG 1：打印成功后已打印区不刷新
+- **症状**：订单打印成功出纸，但前端"已打印"列表始终不更新，用户以为没打成功反复重打。
+- **根因**：`PrintService.printOne` 成功分支只 emit 了 `printed`（单条）和 `pending-updated`，**遗漏了 `printed-updated` 快照广播**，导致渲染层 `printedMap` 永远不更新。
+- **修复**：成功分支补 `this.emit('printed-updated', this.getPrintedSnapshot())`。
+
+#### BUG 2：重试超限后待打印区不刷新 + 失败订单被轮询反复入队死循环
+- **症状**：订单重试 3 次仍失败后，待打印区该订单不消失；轮询每 10 秒又把同一订单重新入队 → 重试 → 失败 → 再入队，日志爆炸，队列永远在消费失败订单。
+- **根因**：重试超限分支只 `printingSet.delete` + `retryMap.delete`，**没有从 pendingMap 移除、没有标记失败、没有广播 pending-updated**；且 `filterUnprinted` 只过滤 printed + printing，**不过滤失败订单**，轮询会把失败订单当新订单反复入队。
+- **修复**：
+  - 新增 `failedSet: Set<string>` 成员变量，记录重试超限的订单 key。
+  - 重试超限分支：`failedSet.add(key)` + emit `pending-updated`（清掉待打印区）+ emit `failed-updated`（通知前端标红）。
+  - `filterUnprinted` 增加 `!this.failedSet.has(...)` 过滤条件，阻止轮询重复入队。
+  - `confirmPrinted`（打印成功）中 `failedSet.delete(key)`，重打成功后取消标红。
+  - `resetRuntimeState`（切换门店）中 `failedSet.clear()`，避免跨门店污染。
+  - 新增 `getFailedSnapshot()` 方法返回 `Record<platformId, Record<orderId, true>>` 快照。
+
+#### BUG 3：待打印区失败订单无重打入口
+- **症状**：失败订单标红后，待打印区因为 `{!pending && (...)}` 条件**不显示重打按钮**，用户无法手动重打失败订单。
+- **根因**：`PlatformGrid.SectionRow` 用 `!pending` 判断是否显示操作按钮，待打印区 `pending=true` → 永远不显示重打/复单按钮。
+- **修复**：`SectionRow` 新增 `failed` 集合参数，待打印区中失败订单（`pending && failed[orderId]`）也显示重打按钮并整行标红（`#FFEBEE` 背景 + `#C62828` 文字）。
+
+#### BUG 4：失败订单状态未透出到渲染层
+- **症状**：主进程有失败订单概念但渲染层完全无感知，无法标红、无法提供重打入口。
+- **修复**：全链路打通 failed-updated 事件 + getFailed IPC：
+  - `print.ipc.ts`：注册 `failed-updated` 事件转发 + `print:getFailed` IPC handler。
+  - `preload/index.ts`：暴露 `getFailed()` 方法。
+  - `bridge.ts`：补 `getFailed` fallback。
+  - `printStore.ts`：新增 `failedMap` 状态，`loadSnapshots` 中拉取失败快照，`subscribe` 中订阅 `print:failed-updated`。
+  - `HomeView.tsx`：从 store 订阅 `failedMap` 下传 `PlatformGrid`。
+
+### 版本号升级（升级流程测试）
+- `package.json`：`version` 1.0.0 → 1.0.1
+- `.env` / `.env.production`：`VITE_APP_VERSION` 1.0 → 1.0.1
+- `src/renderer/index.html` title 已为 V1.0.1（无需改）
+- `src/renderer/config.ts` fallback 已为 1.0.1（无需改）
+- 用途：Win7 真机已装 1.0.0，发布 1.0.1 到服务器 + 后端接口返回 downloadUrl，验证 Splash 检查更新 → 下载 → 静默安装升级链路
+
+#### 涉及文件
+- `src/main/services/PrintService.ts`（failedSet 成员 + printOne 成功/失败分支广播 + confirmPrinted 清理 + filterUnprinted 过滤 + resetRuntimeState 清空 + getFailedSnapshot 新增）
+- `src/main/ipc/print.ipc.ts`（failed-updated 事件转发 + print:getFailed handler）
+- `src/preload/index.ts`（暴露 getFailed）
+- `src/renderer/api/bridge.ts`（getFailed fallback）
+- `src/renderer/stores/printStore.ts`（failedMap 状态 + loadSnapshots 拉取 + subscribe 订阅）
+- `src/renderer/components/PlatformGrid.tsx`（failedMap prop + SectionRow 失败订单标红 + 重打按钮）
+- `src/renderer/views/HomeView.tsx`（订阅 failedMap 下传 PlatformGrid）
+- `package.json` / `.env` / `.env.production`（版本号 1.0.1）
+
+---
+
 ## [1.0.18] - 2026-09-20
 
 ### 修复：preload 崩溃导致 electronAPI 未注入，渲染层全走 fallback
