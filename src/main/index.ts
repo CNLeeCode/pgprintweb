@@ -1,5 +1,5 @@
 import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
-import { dns } from 'node:dns'
+import * as dns from 'node:dns'
 import { join } from 'path'
 import log from 'electron-log/main'
 import { applyWin7CompatPatches } from './utils/win7-compat'
@@ -15,7 +15,13 @@ import { WINDOW_WIDTH, WINDOW_HEIGHT } from './config'
 // 浏览器（系统网络栈）走 Happy Eyeballs 优先 IPv4，所以"直接 GET 访问正常"，
 // 但 Electron 主进程的 axios 走 Node http 模块用 c-ares/libuv DNS，行为不同。
 // ipv4first 让 IPv4 地址优先尝试，IPv6 失败回退兜底。
-dns.setDefaultResultOrder('ipv4first')
+//
+// 注意：必须用 namespace import（import * as dns），named import
+// （import { dns }）取的是不存在的 dns.dns 属性 → undefined → 运行时崩溃。
+// setDefaultResultOrder 在 Node 16.13+ 才存在，做存在性检查兜底。
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first')
+}
 
 // Win7 兼容补丁必须在 app.ready 之前应用
 applyWin7CompatPatches()
