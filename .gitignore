@@ -1,7 +1,9 @@
 node_modules/
 out/
 dist/
-build/
+# 注意：不忽略 build/ —— 它是 electron-builder 的 buildResources 目录
+# (installer.nsh / icon / license 等资源文件必须随 git 提交，CI 打包才生效)
+# 实际打包产物输出目录是 release/（见下方），已与 build/ 区分
 *.log
 .DS_Store
 .env.local

@@ -39,6 +39,11 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: pgprinter
   uninstallDisplayName: pgprinter
+  # 方案 C：自定义 NSIS include 脚本，强制 /S 静默模式也创建桌面/开始菜单快捷方式
+  # electron-builder 24.x 默认把快捷方式创建放在向导页面 show 函数里，/S 模式跳过页面导致
+  # 静默升级后无快捷方式。customInstall 宏在 Section "Install" 中直接调用，必执行。
+  # 文件路径相对于项目根，由 buildResources 默认指向 build/
+  include: build/installer.nsh
   # 安装完成后自动启动应用
   runAfterFinish: true
   # 不强制要求管理员权限升级提示，减少 Win7 UAC 干扰

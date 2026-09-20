@@ -12,6 +12,12 @@
  *  - 不再依赖独立更新服务器 + latest.yml + sha512
  *  - 下载地址由后端接口返回，发版只需把 exe 丢到静态目录 + 改接口返回
  *
+ * 协议支持：下载地址同时支持 http 与 https
+ *  - 后端返回的 downloadUrl 可能是 http://（内网/IP 直连/无证书服务器）
+ *    也可能是 https://（公网域名 + CDN/对象存储）
+ *  - 根据 URL.protocol 自动选择 Node http / https 模块，不写死 https
+ *  - 302 重定向跳转后地址协议可能变化（http→https 升级），每跳都重新判定协议
+ *
  * Win7 兼容性要点：
  *  - Node https 模块在 Win7 SP1+KB2533623 上支持 TLS1.2
  *  - nsis /S 静默安装无对话框，--updated 让安装器装完自启新版本
@@ -24,7 +30,8 @@
  *  - error                 检查/下载/安装出错
  */
 import { EventEmitter } from 'events'
-import { get, request } from 'https'
+import { get as httpGet } from 'http'
+import { get as httpsGet } from 'https'
 import { createWriteStream, statSync, unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
 import { spawn } from 'child_process'
@@ -33,6 +40,31 @@ import log from 'electron-log/main'
 import { ApiService } from './ApiService'
 import { APP_VERSION, AUTO_DOWNLOAD } from '../config'
 import type { AppUpdateInfo } from '@shared/types/models'
+
+/**
+ * 根据 URL 协议选择对应的 Node HTTP 客户端 get 方法
+ *
+ * 后端返回的下载地址可能是 http://（内网/IP/无证书）或 https://（公网域名/CDN），
+ * 必须按协议动态选择，否则用 https 模块请求 http 地址会抛
+ * "Protocol 'http:' not supported. Expected 'https:'" 错误。
+ *
+ * 302 重定向跳转后协议可能变化（如 http→https 升级），每次跳转都重新判定。
+ *
+ * @param url 下载地址（含协议）
+ * @returns http 或 https 模块的 get 函数
+ */
+function getHttp(url: string): typeof httpGet {
+  const protocol = new URL(url).protocol
+  if (protocol === 'https:') {
+    return httpsGet
+  }
+  if (protocol === 'http:') {
+    return httpGet
+  }
+  // 未知协议兜底用 https（避免直接崩溃，由后续请求错误捕获）
+  log.warn(`下载地址协议非 http/https：${url}，默认按 https 处理`)
+  return httpsGet
+}
 
 /** 下载进度信息 */
 export interface DownloadProgress {
@@ -61,8 +93,8 @@ class UpgradeServiceImpl extends EventEmitter {
   private updateInfo: AppUpdateInfo | null = null
   /** 下载完成的本地安装包绝对路径 */
   private installerPath: string = ''
-  /** 当前下载请求对象，用于取消 */
-  private currentReq: ReturnType<typeof get> | null = null
+  /** 当前下载请求对象，用于取消（http/https 模块请求的联合类型） */
+  private currentReq: ReturnType<typeof httpGet> | ReturnType<typeof httpsGet> | null = null
 
   /**
    * 检查更新（主流程：调接口 + 按 downloadUrl 判定 + 广播结果）
@@ -236,6 +268,8 @@ class UpgradeServiceImpl extends EventEmitter {
    * 带重定向处理的下载（最多 5 次跳转，防止死循环）
    *
    * 对象存储短链、CDN 通常会 302 重定向到真实地址，必须手动跟随。
+   * 重定向后地址协议可能变化（http→https 升级或反向），每跳都用
+   * getHttp() 重新选择对应协议的客户端，避免协议不匹配报错。
    */
   private downloadWithRedirect(url: string, filePath: string, redirectCount: number): Promise<void> {
     if (redirectCount > 5) {
@@ -255,7 +289,9 @@ class UpgradeServiceImpl extends EventEmitter {
         log.info(`断点续传：从 ${existingSize} 字节继续`)
       }
 
-      const req = get(url, { headers }, (res) => {
+      // 按当前 URL 协议选择 http/https 模块（重定向跳转后协议可能变化）
+      const doGet = getHttp(url)
+      const req = doGet(url, { headers }, (res) => {
         // 处理重定向
         if (
           res.statusCode &&

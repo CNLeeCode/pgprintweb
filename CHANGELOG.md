@@ -1,5 +1,30 @@
 # 变更日志
 
+## [1.0.2] - 2026-09-20（升级下载支持 http 协议 + 静默安装强制创建快捷方式）
+
+> 说明：本次发版用于在 Win7 真机测试升级流程，修复两个问题：①后端 `downloadUrl` 返回 http 链接下载失败；②`installer.exe /S --updated` 静默升级后桌面和开始菜单无快捷方式。
+
+### 修复 1：升级下载不支持 http 链接
+- **症状**：后端接口返回的 `downloadUrl` 为 `http://` 开头时，升级下载直接失败，错误日志 `Protocol 'http:' not supported. Expected 'https:'`。
+- **根因**：`UpgradeService.ts` 只导入 Node `https` 模块，`downloadWithRedirect` 用 `https.get` 请求 http 地址会抛协议不匹配错误；302 重定向跳转后协议若由 https 切到 http（或反向）也会同样失败。
+- **修复**：
+  - 同时导入 `http` 与 `https` 模块的 `get` 函数。
+  - 新增 `getHttp(url)` 工具函数，按 `URL.protocol` 动态选择对应协议的客户端。
+  - `downloadWithRedirect` 每跳重定向都用 `getHttp(url)` 重新判定协议，支持 http↔https 互跳。
+  - `currentReq` 类型改为 http/https 请求联合类型。
+- **涉及文件**：`src/main/services/UpgradeService.ts`
+
+### 修复 2：静默升级后桌面/开始菜单无快捷方式
+- **症状**：`UpgradeService.quitAndInstall` 用 `installer.exe /S --updated` 静默覆盖安装，升级完成后桌面和开始菜单的 pgprinter 图标不出现，用户必须手动进 `C:\Program Files\pgprinter\` 双击 exe 才能启动。
+- **根因**：electron-builder 24.x 的 nsis 模板把桌面/开始菜单快捷方式的创建逻辑放在向导页面的 show 函数（`MUI_PAGE_INSTFILES` Page Pre/Show 钩子）里，nsis 在 `/S` 静默模式下会跳过所有页面函数，导致静默安装不创建快捷方式。
+- **修复**（方案 C）：用 electron-builder `nsis.include` 注入自定义 NSIS 脚本，通过 `customInstall` 宏在 install Section 中强制创建快捷方式（不经过页面函数，silent 模式也必执行）。
+  - 新增 `build/installer.nsh`：含 `customInstall` 宏，用 `CreateShortCut` 显式创建桌面 `$DESKTOP\${SHORTCUT_NAME}.lnk` 和开始菜单 `$SMPROGRAMS\${APP_PRODUCT_NAME}\${SHORTCUT_NAME}.lnk` 快捷方式，`SetShellVarContext all` 配合 `perMachine: true` 写入 All Users。
+  - `electron-builder.yml` 的 nsis 块加 `include: build/installer.nsh` 引用。
+- **涉及文件**：`build/installer.nsh`（新增）、`electron-builder.yml`
+
+### 发版操作
+GitHub Actions → `Build Windows Installer (Win7 兼容)` → Run workflow → 输入 `["1.0.2"]` → 等 5-10 分钟下载 Artifacts。CI 会用 `npm version 1.0.2` 自动改 `package.json`，用 `env.VITE_APP_VERSION=1.0.2` 自动覆盖 `.env` 的版本号，源码无需手动改版本。
+
 ## [1.0.1] - 2026-09-20（打印状态广播修复 + 升级流程测试版）
 
 > 说明：本次发版目的有二：①修复打印订单状态不刷新 / 失败订单轮询死循环等 4 个核心 BUG；②将 package.json 版本号从 1.0.0 提升到 1.0.1，用于在 Win7 真机测试 electron-builder 升级流程（1.0.0 已安装 → 1.0.1 可升级）。与下方 2026-09-19 的历史 [1.0.1]（打包配置调整）为不同发版，此处为最新一次。
