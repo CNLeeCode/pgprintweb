@@ -23,16 +23,22 @@ win:
   requestedExecutionLevel: asInvoker
   # Win7 兼容：不使用 differentialDownload 增量更新
 nsis:
-  # 方案 B：一键安装，不问目录，门店人员双击即装
-  oneClick: true
+  # 方案 C：安装向导模式，允许门店人员选择安装盘符/目录（应对 C 盘紧张的老 Win7 机器）
+  oneClick: false
+  # perMachine:true → 默认装到 C:\Program Files\pgprinter（全机器安装，需管理员权限）
+  # 用户可在向导第二步改成 D:\pgprinter 等
   perMachine: true
-  allowToChangeInstallationDirectory: false
+  allowToChangeInstallationDirectory: true
+  # 安装向导语言：简体中文 + 英文兜底（Win7 下确保中文界面）
+  installerLanguages: zh_CN,en_US
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: pgprinter
   uninstallDisplayName: pgprinter
   # 安装完成后自动启动应用
   runAfterFinish: true
+  # 不强制要求管理员权限升级提示，减少 Win7 UAC 干扰
+  differentialPackage: false
 # 方案 B：不再使用 electron-updater，无需 publish 配置。
 #
 # 显式禁止 electron-builder 自动发布到 GitHub Release 的功能由 CLI 选项
