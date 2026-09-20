@@ -1,5 +1,60 @@
 # 变更日志
 
+## [1.0.16] - 2026-09-20
+
+### 文档：完善项目交接文档
+
+#### 新增
+- `docs/接口对接文档.md`：后端接口地址、请求参数、返回结构、字段映射、错误码、接口日志机制、调用链路、维护说明
+- `docs/页面功能流程文档.md`：Splash/Login/Home 三页面功能说明、操作流程、状态流转、打印流程、IPC 通道清单
+
+#### 更新
+- `README.md`：从 Gitee 默认模板重写为完整项目说明（简介/技术栈/目录结构/快速开始/Win7 兼容性/文档索引/问题排查）
+
+## [1.0.15] - 2026-09-20
+
+### 修复：打包后接口不执行 + 已打印单子视图不显示（preload 崩溃导致 window.electronAPI 未注入）
+
+#### 症状
+- 开发环境接口正常，打包后接口根本没执行，接口日志为空
+- 已打印的单子在本地数据中能看到，但视图上不显示
+- 两个现象同根因：preload 脚本在打包后崩溃，`contextBridge.exposeInMainWorld` 未执行，`window.electronAPI` 为 undefined，渲染层全走 `bridge.ts` 的 fallback（`loadPrinted` 返回 undefined 不调主进程、`getPrintSnapshots` 返回 `{printed:{}}` 空快照）
+
+#### 根因
+`src/preload/index.ts` 顶层有多处可能抛错导致整个 preload 模块加载失败的语句：
+1. `import log from 'electron-log/preload'`：顶层 import 失败会让整个模块加载失败，`exposeInMainWorld` 不执行
+2. `join(process.resourcesPath, 'notice.wav')`：`process.resourcesPath` 在异常环境下可能为 undefined，`join` 抛 TypeError
+3. `const noticeWavDataUrl = resolveNoticeWavDataUrl()`：顶层赋值若函数抛错则整模块失败
+4. `contextBridge.exposeInMainWorld`：无 try-catch 保护，任何异常都会让 `window.electronAPI` 不被注入
+
+任一崩溃 → 第 163 行 `exposeInMainWorld` 不执行 → 渲染层 `window.electronAPI` 为 undefined → `bridge.ts` 走 fallback → `loadPrinted`/`getPrintSnapshots` 等全部静默返回空值 → 接口不调、已打印视图空、日志为空。
+
+#### 修复（四层加固，确保 exposeInMainWorld 无论如何都执行）
+1. **electron-log 降级加载**：`import log from 'electron-log/preload'` 改为 `try-catch require`，加载失败时降级到 console，避免依赖加载失败拖垮整个 preload
+2. **resolveNoticeWavDataUrl 整体 try-catch**：函数体外层包 try-catch，`process.resourcesPath` 加 `?? ''` 兜底防 undefined，任何异常返回空串（audioPlayer 自动回退 Web Audio beep）
+3. **noticeWavDataUrl 顶层赋值 try-catch**：双保险，顶层调用失败也降级为空串
+4. **exposeInMainWorld 加固 + 降级方案**：try-catch 包裹，暴露失败时尝试暴露降级版 api（仅 invoke+on），保证渲染进程核心 IPC 可用；降级也失败才记录"preload 彻底崩溃"
+
+#### 诊断日志（验证修复是否生效）
+- `src/renderer/api/bridge.ts` 启动时输出 `[bridge] window.electronAPI 已注入/未注入` 诊断日志
+- 该 console 输出会被主进程 `webContents 'console-message'` 事件转发到 `userData/logs/main.log`
+- 现场打开日志搜 `[bridge]` 即可判断 preload 是否正常注入：
+  - `已注入` → 修复生效，接口/打印/已打印视图正常
+  - `未注入` → preload 仍崩溃，搜 `[preload-error]` 看具体崩溃原因
+
+#### 涉及文件
+- `src/preload/index.ts`：四层 try-catch 加固（electron-log 降级 / resolveNoticeWavDataUrl 整体兜底 / noticeWavDataUrl 顶层兜底 / exposeInMainWorld 降级方案）
+- `src/renderer/api/bridge.ts`：启动诊断日志（区分真实注入 vs fallback）
+
+#### 验证步骤
+1. `npm run build` 重新打包
+2. 安装新版本到 Win7 真机
+3. 打开 `userData/logs/main.log`（通常 `C:\Users\<user>\AppData\Roaming\比优特到家小票打印系统\logs\main.log`）
+4. 搜 `[bridge]`：
+   - 出现 `已注入` → preload 加固生效，接口能调、已打印单子视图正常显示
+   - 出现 `未注入` → 搜 `[preload-error]` 看崩溃原因，针对性修复
+5. 也可按 F12 开 DevTools，Console 应显示 `[bridge] window.electronAPI 已注入`
+
 ## [1.0.14] - 2026-09-19
 
 ### 新增：Footer 接口状态指示器 + 接口日志弹窗 + 网络诊断

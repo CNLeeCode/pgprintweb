@@ -5,7 +5,30 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import log from 'electron-log/preload'
+
+/**
+ * 日志降级：electron-log/preload 加载失败时用 console 兜底。
+ * 关键：若用顶层 import 失败会导致整个 preload 模块加载失败，
+ * contextBridge.exposeInMainWorld 不执行 → window.electronAPI 为 undefined
+ * → 渲染层全走 fallback（接口不调、已打印视图空）。改用 try-catch require 隔离。
+ */
+type PreloadLogger = {
+  warn: (...args: unknown[]) => void
+  info: (...args: unknown[]) => void
+  error: (...args: unknown[]) => void
+}
+let log: PreloadLogger
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  log = require('electron-log/preload')
+} catch (e) {
+  log = {
+    warn: (...args: unknown[]) => console.warn('[preload:no-log]', ...args),
+    info: (...args: unknown[]) => console.info('[preload:no-log]', ...args),
+    error: (...args: unknown[]) => console.error('[preload:no-log]', ...args)
+  }
+  console.error('[preload] electron-log 加载失败，降级 console:', e)
+}
 
 /**
  * 退款提示音 notice.wav 的 data URL（打包/开发双环境统一解析）
@@ -38,27 +61,38 @@ import log from 'electron-log/preload'
  * @returns data:audio/wav;base64,<base64> 或空字符串（文件缺失）
  */
 function resolveNoticeWavDataUrl(): string {
-  // 候选路径：打包后优先（resourcesPath），dev 模式兜底（__dirname 回退两级）
-  const candidates = [
-    join(process.resourcesPath, 'notice.wav'),
-    join(__dirname, '../../resources/notice.wav')
-  ]
-  for (const filePath of candidates) {
-    try {
-      if (existsSync(filePath)) {
-        const buf = readFileSync(filePath)
-        return `data:audio/wav;base64,${buf.toString('base64')}`
+  try {
+    // 候选路径：打包后优先（resourcesPath），dev 模式兜底（__dirname 回退两级）
+    // process.resourcesPath 用 ?? '' 兜底，防止 undefined 时 join 抛 TypeError
+    const candidates = [
+      join(process.resourcesPath ?? '', 'notice.wav'),
+      join(__dirname, '../../resources/notice.wav')
+    ]
+    for (const filePath of candidates) {
+      try {
+        if (existsSync(filePath)) {
+          const buf = readFileSync(filePath)
+          return `data:audio/wav;base64,${buf.toString('base64')}`
+        }
+      } catch {
+        // 某些路径可能因权限/不存在抛错，跳过继续尝试下一个候选
       }
-    } catch {
-      // 某些路径可能因权限/不存在抛错，跳过继续尝试下一个候选
     }
+    log.warn(`notice.wav 不存在（已回退 Web Audio 合成提示音），尝试路径: ${candidates.join(', ')}`)
+  } catch (e) {
+    // 整体兜底：任何未预期异常都降级为空串，保证 preload 不在此处崩溃
+    log.error('resolveNoticeWavDataUrl 整体失败，降级为空串:', e)
   }
-  log.warn(`notice.wav 不存在（已回退 Web Audio 合成提示音），尝试路径: ${candidates.join(', ')}`)
   return ''
 }
 
-/** 退款提示音 data URL（空字符串表示文件缺失，用合成 beep 兜底） */
-const noticeWavDataUrl = resolveNoticeWavDataUrl()
+/** 退款提示音 data URL（顶层 try-catch 双保险，任何异常都降级为空串） */
+let noticeWavDataUrl = ''
+try {
+  noticeWavDataUrl = resolveNoticeWavDataUrl()
+} catch (e) {
+  log.error('resolveNoticeWavDataUrl 顶层调用失败:', e)
+}
 
 const api = {
   /** 通用 IPC 调用封装 */
@@ -159,11 +193,36 @@ const api = {
   noticeWavDataUrl,
 }
 
-if (process.contextIsolated) {
-  contextBridge.exposeInMainWorld('electronAPI', api)
-} else {
-  // @ts-ignore 兜底
-  window.electronAPI = api
+/**
+ * 关键加固：exposeInMainWorld 必须保证执行。
+ * 即使前面 try-catch 未拦住的意外错误，这里仍要尝试暴露 api；
+ * 暴露失败则暴露降级版（仅 invoke+on），保证渲染进程核心 IPC 可用，
+ * 避免 window.electronAPI 为 undefined 导致渲染层全走 fallback
+ * （接口不调、已打印视图空、日志为空等一系列症状的根因）。
+ */
+try {
+  if (process.contextIsolated) {
+    contextBridge.exposeInMainWorld('electronAPI', api)
+  } else {
+    // @ts-ignore 兜底
+    window.electronAPI = api
+  }
+} catch (e) {
+  log.error('exposeInMainWorld 失败，尝试暴露降级 api（仅 invoke+on）:', e)
+  try {
+    const degraded = {
+      invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+      on: (channel: string, cb: (...a: unknown[]) => void) => {
+        const h = (_e: unknown, ...a: unknown[]) => cb(...a)
+        ipcRenderer.on(channel, h)
+        return () => ipcRenderer.removeListener(channel, h)
+      }
+    }
+    // @ts-ignore 降级版本类型不完整但能跑，确保核心 IPC 可用
+    window.electronAPI = degraded
+  } catch (e2) {
+    log.error('降级暴露也失败，preload 彻底崩溃，渲染层将全走 fallback:', e2)
+  }
 }
 
 export type ElectronAPI = typeof api

@@ -64,4 +64,19 @@ const fallback: ElectronAPI = {
   openStoreDir: () => Promise.resolve(true)
 }
 
+/**
+ * 诊断日志：确认 window.electronAPI 是否由 preload 注入。
+ * - 已注入：IPC 通道可用，接口/打印/已打印视图正常
+ * - 未注入（走 fallback）：接口不调、已打印视图空、日志为空
+ *   可能原因：preload 脚本崩溃（依赖加载失败/文件读取异常）或未加载
+ * 该 console 输出会被主进程 webContents 'console-message' 事件转发到主进程日志，
+ * 现场打开 userData/logs/main.log 搜 "[bridge]" 即可判断 preload 是否正常注入。
+ */
+const injected = typeof window !== 'undefined' && !!window.electronAPI
+if (!injected) {
+  console.error('[bridge] window.electronAPI 未注入，渲染层将走 fallback（接口不调、已打印视图空）。可能原因：preload 崩溃或未加载。')
+} else {
+  console.info('[bridge] window.electronAPI 已注入，IPC 通道可用')
+}
+
 export const electronAPI: ElectronAPI = window.electronAPI ?? fallback
