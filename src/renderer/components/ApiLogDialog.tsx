@@ -202,7 +202,7 @@ export default function ApiLogDialog({ open, onClose }: ApiLogDialogProps) {
         <Button onClick={onClose} variant="contained" size="small" sx={{ fontSize: 12 }}>
           关闭
         </Button>
-      </Dialog>
+      </DialogActions>
     </Dialog>
   )
 }
