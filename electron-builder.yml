@@ -31,8 +31,10 @@ nsis:
   # 用户可在向导第二步改成 D:\pgprinter 等
   perMachine: true
   allowToChangeInstallationDirectory: true
-  # 安装向导语言：简体中文 + 英文兜底（Win7 下确保中文界面）
-  installerLanguages: zh_CN,en_US
+  # 安装向导语言：不显式指定 installerLanguages。
+  # electron-builder 24.13.3 + NSIS 3.0.4.1 下显式指定 zh_CN,en_US 会触发 bug：
+  # 语言 ID 解析生成 "undefined" → warning 7025 → 被当作 error 终止构建。
+  # 默认行为：内置全部可用语言（含 zh_CN），安装时按系统语言自动选择。
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: pgprinter
