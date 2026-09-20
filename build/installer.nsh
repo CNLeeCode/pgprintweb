@@ -60,4 +60,23 @@
     "$SMPROGRAMS\${APP_FILENAME}\${SHORTCUT_NAME}.lnk" \
     "$INSTDIR\${APP_EXECUTABLE_FILENAME}" \
     "" "" 0
+
+  ; ----- 静默升级后自动启动新版本 -----
+  ; 根因：electron-builder 的 assisted installer (oneClick=false) 在 /S 静默模式下
+  ;   不会触发 MUI_FINISHPAGE_RUN_FUNCTION（finish page 被 silent 跳过），
+  ;   而 installSection.nsh 里 doStartApp 又要求 ${isForceRun} && ${Silent} 双条件，
+  ;   我们传的 --updated 只设置 isUpdated 不设置 isForceRun，
+  ;   导致静默升级完成后新版本 exe 不启动，用户看不到应用窗口。
+  ;
+  ; 修复：customInstall 在 Section Install 末尾被调用（文件已释放完毕），
+  ;   这里手动用 ExecShell 启动新 exe，参数 --updated 让新版本知道自己是被
+  ;   升级启动的（与 electron-builder 内部 StartApp 宏约定一致）。
+  ;
+  ; 触发条件：${Silent}（/S 静默模式）+ ${isUpdated}（--updated 标志）
+  ;   - 普通静默安装（无 --updated）不触发，避免首次静默部署时意外启动
+  ;   - 向导模式（非 /S）不触发，由 finish page 的复选框控制是否启动
+  ${If} ${Silent}
+  ${AndIf} ${isUpdated}
+    ExecShell "open" "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--updated"
+  ${EndIf}
 !macroend
