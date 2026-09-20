@@ -1,5 +1,49 @@
 # 变更日志
 
+## [1.0.18] - 2026-09-20
+
+### 修复：preload 崩溃导致 electronAPI 未注入，渲染层全走 fallback
+
+#### 症状
+- 进应用所有功能异常：选择打印设备空、选择平台"网络请求失败"、连接信息提示"请先选择打印设备"、客服二维码点击"选择文件"提示 fallback、接口日志共 0 条
+- `main.log` 持续报 `[preload-error] TypeError: log.warn is not a function` / `log.error is not a function`
+- `[bridge] window.electronAPI 未注入，渲染层将走 fallback`
+- 持续 19+ 次启动均复现，影响所有门店使用
+
+#### 根因
+`src/preload/index.ts` 用 `require('electron-log/preload')` 加载日志模块，electron-log 5.x 的 preload 入口导出对象**缺少 `warn` / `error` 方法**（与 main 入口导出结构不同）。
+
+- `require('electron-log/preload')` 执行成功（没抛异常），返回对象赋给 `log`
+- `log` 不是 undefined，但 `log.warn` / `log.error` 是 undefined
+- 调用 `log.warn(...)` 或 `log.error(...)` 抛 `TypeError: log.warn is not a function`
+- 该 TypeError 在 `resolveNoticeWavDataUrl` 的正常分支（文件不存在时的 `log.warn` 提示）触发，不在任何 try-catch 内 → 直接冒泡导致整个 preload 模块加载失败
+- `contextBridge.exposeInMainWorld` 永远执行不到 → `window.electronAPI` 为 undefined → 渲染层全走 fallback
+
+#### 因果链
+```
+electron-log/preload 5.x 导出对象缺少 warn/error 方法
+  ↓
+log.warn()/log.error() 调用抛 TypeError
+  ↓
+preload 模块加载失败
+  ↓
+exposeInMainWorld 不执行
+  ↓
+window.electronAPI = undefined
+  ↓
+渲染层走 fallback：接口不调、打印机列表空、已打印视图空、客服图片 fallback、接口日志空
+```
+
+#### 修复（`src/preload/index.ts`）
+1. **移除 electron-log 依赖**：preload 直接用 console 输出日志。preload 的 console 输出会被主进程 `webContents 'console-message'` 事件捕获并转发到 main.log（带 `[renderer-console]` 前缀），效果与 electron-log 一致，且消除对第三方库导出结构的依赖。
+2. **加启动横幅日志**：preload 最顶部输出 `[preload] 脚本开始执行, contextIsolated=...`，main.log 第一眼即可确认 preload 是否被加载。
+3. **重写 expose 逻辑**：不依赖 `process.contextIsolated`（某些环境可能未注入），直接检测 `contextBridge.exposeInMainWorld` 可用性；降级方案也走 `exposeInMainWorld`（直接赋 `window.electronAPI` 在 `contextIsolation: true` 下无效，赋的是隔离 context 的 window）。
+
+#### 涉及文件
+- `src/preload/index.ts` — 移除 electron-log、重写 expose 逻辑、加启动横幅
+
+---
+
 ## [1.0.17] - 2026-09-20
 
 ### 修复：打包后 .env 配置不生效，Splash 一直显示"检查更新失败"

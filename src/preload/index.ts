@@ -1,34 +1,36 @@
 /**
  * Preload 脚本：通过 contextBridge 安全暴露 IPC 接口给渲染进程
  * 对应 KMP 各 ViewModel 调用的工具方法
+ *
+ * ⚠️ 历史教训：禁止在 preload 中引入 electron-log。
+ *  electron-log 5.x 的 preload 入口导出对象缺少 warn/error 方法，
+ *  调用 log.warn()/log.error() 抛 TypeError → preload 模块加载失败 →
+ *  exposeInMainWorld 不执行 → window.electronAPI 为 undefined →
+ *  渲染层全走 fallback（所有接口不调、视图空、客服图片 fallback）。
+ *  preload 的 console 输出会被主进程 webContents 'console-message' 事件
+ *  捕获并转发到 main.log（[renderer-console] 前缀），效果与 electron-log 一致，
+ *  且消除了对第三方库导出结构的依赖，更稳定。
  */
 import { contextBridge, ipcRenderer } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 
 /**
- * 日志降级：electron-log/preload 加载失败时用 console 兜底。
- * 关键：若用顶层 import 失败会导致整个 preload 模块加载失败，
- * contextBridge.exposeInMainWorld 不执行 → window.electronAPI 为 undefined
- * → 渲染层全走 fallback（接口不调、已打印视图空）。改用 try-catch require 隔离。
+ * Preload 日志：直接用 console，不引入 electron-log。
+ *
+ * preload 的 console 输出会被主进程 webContents 的 'console-message' 事件
+ * 捕获并转发到 main.log（带 [renderer-console] 前缀），效果与 electron-log 一致。
+ * 消除了对第三方库导出结构的依赖，避免历史上 electron-log 5.x preload 入口
+ * 导出对象缺少 warn/error 方法导致的崩溃事故。
  */
-type PreloadLogger = {
-  warn: (...args: unknown[]) => void
-  info: (...args: unknown[]) => void
-  error: (...args: unknown[]) => void
+const log = {
+  warn: (...args: unknown[]) => console.warn('[preload]', ...args),
+  info: (...args: unknown[]) => console.info('[preload]', ...args),
+  error: (...args: unknown[]) => console.error('[preload]', ...args)
 }
-let log: PreloadLogger
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  log = require('electron-log/preload')
-} catch (e) {
-  log = {
-    warn: (...args: unknown[]) => console.warn('[preload:no-log]', ...args),
-    info: (...args: unknown[]) => console.info('[preload:no-log]', ...args),
-    error: (...args: unknown[]) => console.error('[preload:no-log]', ...args)
-  }
-  console.error('[preload] electron-log 加载失败，降级 console:', e)
-}
+
+/** 启动横幅：确认 preload 脚本已被加载（main.log 第一眼可见） */
+console.log('[preload] 脚本开始执行, contextIsolated=', process.contextIsolated)
 
 /**
  * 退款提示音 notice.wav 的 data URL（打包/开发双环境统一解析）
@@ -195,33 +197,57 @@ const api = {
 
 /**
  * 关键加固：exposeInMainWorld 必须保证执行。
- * 即使前面 try-catch 未拦住的意外错误，这里仍要尝试暴露 api；
- * 暴露失败则暴露降级版（仅 invoke+on），保证渲染进程核心 IPC 可用，
- * 避免 window.electronAPI 为 undefined 导致渲染层全走 fallback
- * （接口不调、已打印视图空、日志为空等一系列症状的根因）。
+ *
+ * 历史教训：曾因 electron-log 导出对象缺少方法导致 preload 整体崩溃，
+ * exposeInMainWorld 永远执行不到，window.electronAPI 为 undefined，
+ * 渲染层全走 fallback（接口不调、已打印视图空、日志为空等一系列症状）。
+ *
+ * 实现要点：
+ * 1. 不依赖 process.contextIsolated（某些环境可能未注入或值不确定），
+ *    直接检测 contextBridge.exposeInMainWorld 是否可用，可用则走 contextBridge，
+ *    不可用（contextIsolation: false）才直接赋 window.electronAPI。
+ * 2. 完整 api 暴露失败时降级到最小 api（仅 invoke+on），降级也必须走
+ *    contextBridge.exposeInMainWorld——直接赋 window.electronAPI 在
+ *    contextIsolation: true 下无效（赋的是隔离 context 的 window，不是渲染进程的 window）。
+ * 3. 所有暴露操作都在 try-catch 内，确保任何异常都被捕获记录，不影响后续流程。
  */
-try {
-  if (process.contextIsolated) {
-    contextBridge.exposeInMainWorld('electronAPI', api)
-  } else {
-    // @ts-ignore 兜底
-    window.electronAPI = api
+function tryExpose(apiObj: typeof api, label: string): boolean {
+  try {
+    if (typeof contextBridge?.exposeInMainWorld === 'function') {
+      contextBridge.exposeInMainWorld('electronAPI', apiObj)
+      log.info(`${label} contextBridge.exposeInMainWorld 成功`)
+      return true
+    }
+    // contextIsolation: false 兜底：直接赋 window
+    // @ts-ignore contextIsolation: false 时 window 可直接赋值
+    window.electronAPI = apiObj
+    log.info(`${label} contextBridge 不可用，直接赋 window.electronAPI`)
+    return true
+  } catch (e) {
+    log.error(`${label} 暴露失败:`, e)
+    return false
   }
-} catch (e) {
-  log.error('exposeInMainWorld 失败，尝试暴露降级 api（仅 invoke+on）:', e)
+}
+
+// 先尝试完整 api
+if (!tryExpose(api, '完整api')) {
+  // 完整 api 暴露失败（可能是 api 对象某个值不满足 contextBridge 结构化克隆要求），
+  // 降级到最小 api（仅 invoke+on），确保渲染进程核心 IPC 可用
   try {
     const degraded = {
+      /** 通用 IPC 调用封装 */
       invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+      /** 通用 IPC 事件监听封装 */
       on: (channel: string, cb: (...a: unknown[]) => void) => {
         const h = (_e: unknown, ...a: unknown[]) => cb(...a)
         ipcRenderer.on(channel, h)
         return () => ipcRenderer.removeListener(channel, h)
       }
     }
-    // @ts-ignore 降级版本类型不完整但能跑，确保核心 IPC 可用
-    window.electronAPI = degraded
-  } catch (e2) {
-    log.error('降级暴露也失败，preload 彻底崩溃，渲染层将全走 fallback:', e2)
+    // @ts-ignore 降级版本类型不完整但能跑
+    tryExpose(degraded, '降级api')
+  } catch (e) {
+    log.error('降级 api 构造失败，preload 彻底崩溃，渲染层将全走 fallback:', e)
   }
 }
 
