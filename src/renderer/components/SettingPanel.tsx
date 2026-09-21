@@ -15,6 +15,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import ImageIcon from '@mui/icons-material/Image'
 import { playRefundSound } from '../utils/audioPlayer'
 import { electronAPI } from '../api/bridge'
+import { DOMAIN_URL } from '../config'
 
 /** 客服二维码选择结果（主进程 kf-photo:select 返回） */
 interface KfPhotoResult {
@@ -160,7 +161,7 @@ export default function SettingPanel({ onPrintTest, onOpenHistory }: SettingPane
       <Button
         variant="contained"
         size="small"
-        onClick={() => open('http://<生产域名>/index.php/Home/MgTest/')}
+        onClick={() => open(`${DOMAIN_URL}/index.php/Home/MgTest/`)}
         sx={{ justifyContent: 'flex-start', textTransform: 'none', borderRadius: '8px' }}
       >
         管理后台

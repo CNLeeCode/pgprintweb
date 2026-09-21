@@ -1,22 +1,25 @@
 /**
  * 全局配置常量（对应 KMP BuildConfig + config）
+ *
+ * 安全说明：域名 / 接口前缀 / 鉴权密钥等敏感配置均通过环境变量注入，
+ * 不在源码中硬编码明文。真实值写在 .env / .env.production（已加入 .gitignore，不提交）。
  */
 
 // 应用版本（与 package.json version 字段对齐，由 VITE_APP_VERSION 环境变量覆盖）
 // 不再与 KMP 版本号对齐 —— Electron 端独立发版，版本号自成一套
 export const APP_VERSION = process.env.VITE_APP_VERSION || '1.0.1'
 
-// 后端域名
-export const DOMAIN_URL = process.env.VITE_DOMAIN_URL || 'http://<生产域名>'
+// 后端域名（敏感配置，通过环境变量注入，不硬编码明文）
+export const DOMAIN_URL = process.env.VITE_DOMAIN_URL || ''
 
-// 接口前缀
-export const API_PREFIX = '/index.php/Home/<接口前缀名>/'
+// 接口前缀（敏感配置，通过环境变量注入，不硬编码明文）
+export const API_PREFIX = process.env.VITE_API_PREFIX || ''
 
 // 完整接口基础地址
 export const API_BASE_URL = `${DOMAIN_URL}${API_PREFIX}`
 
-// 接口密钥（与 KMP 一致）
-export const API_SECRET = '<鉴权密钥>'
+// 接口密钥（敏感配置，通过环境变量注入，不硬编码明文）
+export const API_SECRET = process.env.VITE_API_SECRET || ''
 
 // 数据存储目录名
 export const STORED_DIR = 'pgprint'
@@ -49,7 +52,7 @@ export const HTTP_TIMEOUT = 30_000
  * 应用更新检查接口地址（方案 B：后端接口直返版本号 + 下载地址）
  *
  * 配置方式（.env / .env.production）：
- *   VITE_UPDATE_SERVER_URL=http://<更新服务IP>/index.php/Home/<接口前缀名>/getWebPgPrintUpdateInfo
+ *   VITE_UPDATE_SERVER_URL=http://<更新服务IP>/<接口前缀>/getWebPgPrintUpdateInfo
  *
  * 前期用 IP，后期换域名只需改这一行。
  * 未配置时默认用 API_BASE_URL + 'getWebPgPrintUpdateInfo'。

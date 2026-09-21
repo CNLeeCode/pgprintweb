@@ -6,6 +6,8 @@ dist/
 # 实际打包产物输出目录是 release/（见下方），已与 build/ 区分
 *.log
 .DS_Store
+.env
+.env.production
 .env.local
 release/
 .vscode/
