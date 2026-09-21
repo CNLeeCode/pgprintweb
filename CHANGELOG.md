@@ -1,5 +1,37 @@
 # 变更日志
 
+## [安全清洗] - 2026-09-21（git 历史敏感信息清除 + 配置外置）
+
+> 说明：文档与源码中曾硬编码生产域名、接口前缀、鉴权密钥、更新服务 IP 等敏感配置，存在泄露风险。本次彻底清除 git 全历史中的明文，并将敏感配置改为环境变量注入。
+
+### 变更
+
+1. **源码配置外置**（敏感值改环境变量读取，移除明文）：
+   - `src/main/config.ts`：`DOMAIN_URL` / `API_PREFIX` / `API_SECRET` 改为 `process.env` 读取，移除明文 fallback，注释中 URL 占位化
+   - `src/renderer/config.ts`：同步改为 `import.meta.env` 读取
+   - `src/renderer/components/SettingPanel.tsx`：管理后台跳转链接改用 `DOMAIN_URL` 拼接，不再硬编码
+2. **.env 移出 git 跟踪**：
+   - `.gitignore` 新增 `.env` / `.env.production` 忽略规则
+   - `git rm --cached` 移出跟踪（本地保留真实值，不提交）
+   - 新增 `.env.example` 模板（占位符，可提交）
+3. **git 历史清洗**（git-filter-repo 全量重写）：
+   - 将生产域名 / 接口前缀名 / 鉴权密钥 / 更新服务 IP 4 个敏感字符串在全历史中替换为占位符
+   - 强制推送覆盖 gitee(origin) master、github master / main
+   - 清洗后 `git log --all -S` 验证 4 个敏感字符串均为 0
+
+### 涉及文件
+- `src/main/config.ts`
+- `src/renderer/config.ts`
+- `src/renderer/components/SettingPanel.tsx`
+- `.env.example`（新增）
+- `.gitignore`
+- 全部历史提交（filter-repo 重写）
+
+### 注意
+- 历史 .git 备份：`/tmp/pgprint-git-backup-1789953336`（如需回滚）
+- 协作者需重新 clone 仓库（旧 fork / clone 含过期历史）
+- `.env` / `.env.production` 本地保留真实值，新环境部署时从 `.env.example` 复制并填入
+
 ## [1.0.2] - 2026-09-20（升级下载支持 http 协议 + 静默安装强制创建快捷方式）
 
 > 说明：本次发版用于在 Win7 真机测试升级流程，修复两个问题：①后端 `downloadUrl` 返回 http 链接下载失败；②`installer.exe /S --updated` 静默升级后桌面和开始菜单无快捷方式。
