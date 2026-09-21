@@ -15,6 +15,10 @@
 #      支持简写：1.0 会自动规范化为 1.0.0（npm version 要求三段式 semver）
 #   4. 等待构建完成（约 5-10 分钟），在 Artifacts 区域下载 exe
 #
+# 敏感配置说明：
+#   .env / .env.production 已随 git 提交（私有仓库），CI 的 loadEnv 直接读取，
+#   无需额外配置 GitHub Secrets。仅 VITE_APP_VERSION 需按构建版本号动态注入。
+#
 # 产物：
 #   release/pgprinter Setup {version}.exe — NSIS 一键安装包
 #   1.0.0 用于初次安装，1.0.1 用于测试升级流程
@@ -151,9 +155,9 @@ jobs:
       #          缺 GH_TOKEN 时报错中断。本项目用 actions/upload-artifact 上传产物。
       #          注意：never 必须走 CLI，yml 的 publish 字段期望 provider 配置对象，
       #          写 `publish: never` 会把 "never" 当自定义 publisher 模块名导致崩溃。
-      # VITE_APP_VERSION 环境变量覆盖 .env.production 的值，注入到 config.ts
-      # 优先级：环境变量 > .env.production > .env，确保版本号正确
-      # 用规范化后的三段式版本号，与 package.json version 保持一致
+      # .env / .env.production 已随 git 提交，CI 的 loadEnv 直接读取，
+      # 无需配置 GitHub Secrets。仅 VITE_APP_VERSION 需按构建版本号动态注入覆盖。
+      # 版本号优先级：环境变量 > .env.production > .env
       - name: Build & Package (NSIS)
         run: npm run build:win
         env:

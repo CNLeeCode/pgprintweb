@@ -6,8 +6,8 @@ dist/
 # 实际打包产物输出目录是 release/（见下方），已与 build/ 区分
 *.log
 .DS_Store
-.env
-.env.production
+# .env / .env.production 本项目已转私有仓库，直接提交 git
+# （CI 通过 loadEnv 读取，换机器 clone 即可运行，无需额外配置 Secrets）
 .env.local
 release/
 .vscode/
