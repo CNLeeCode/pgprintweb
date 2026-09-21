@@ -130,7 +130,7 @@ window.electronAPI = undefined
 
 #### 症状
 - 进应用首屏 Splash 显示"检查更新失败"，诊断报告显示 `<生产域名>` 的 `getPlatformList` 接口能正常返回（HTTP 200 平台数=8），但更新检查仍失败
-- `.env` 已配置 `VITE_UPDATE_SERVER_URL=http://<更新服务IP>/index.php/Home/<接口前缀名>/getWebPgPrintUpdateInfo`，但完全没生效
+- `.env` 已配置 `VITE_UPDATE_SERVER_URL=http://<更新服务IP>/{接口前缀}/getWebPgPrintUpdateInfo`，但完全没生效
 
 #### 根因
 `electron.vite.config.ts` 中 `main` / `preload` 配置块没有 `define`，electron-vite 2.x 不会自动把 `.env` 中的 `VITE_*` 变量静态替换到打包产物里，而是保留 `process.env.VITE_X` 运行时表达式。
@@ -144,7 +144,7 @@ window.electronAPI = undefined
 | `VITE_DOMAIN_URL` | `http://<生产域名>` | fallback `http://<生产域名>`（恰好一致 → `getPlatformList` 200）|
 | `VITE_UPDATE_SERVER_URL` | `http://<更新服务IP>/...` | **fallback `http://<生产域名>/.../getWebPgPrintUpdateInfo`** |
 
-→ <更新服务IP> 根本没被请求，请求打到 `<生产域名>/getWebPgPrintUpdateInfo` 这个不存在的接口 → 404/500 → axios 抛错 → `getAppUpdateInfo` 返回 null → `UpgradeService.checkForUpdates` 走 error 分支 → Splash 显示"检查更新失败"
+→ 更新服务IP 根本没被请求，请求打到 `<生产域名>/getWebPgPrintUpdateInfo` 这个不存在的接口 → 404/500 → axios 抛错 → `getAppUpdateInfo` 返回 null → `UpgradeService.checkForUpdates` 走 error 分支 → Splash 显示"检查更新失败"
 
 诊断报告里 `getPlatformList` 能通 ≠ `getWebPgPrintUpdateInfo` 能通，因为 fallback 后两个接口都打到同一个域名但不同路径，前者存在后者不存在。
 
@@ -155,7 +155,7 @@ window.electronAPI = undefined
 #### 验证
 打包后检查 `out/main/index.js`：
 - 修复前：`const UPDATE_CHECK_URL = process.env.VITE_UPDATE_SERVER_URL || process.env.VITE_UPDATE_CHECK_URL || ...`
-- 修复后：`const UPDATE_CHECK_URL = "http://<更新服务IP>/index.php/Home/<接口前缀名>/getWebPgPrintUpdateInfo";`（静态值，运行时不再读 `process.env`）
+- 修复后：`const UPDATE_CHECK_URL = "http://<更新服务IP>/{接口前缀}/getWebPgPrintUpdateInfo";`（静态值，运行时不再读 `process.env`）
 
 #### 涉及文件
 - `electron.vite.config.ts`：新增 `buildEnvDefines` + `define` 静态注入
@@ -554,7 +554,7 @@ macOS 26.3 上 brew 4.1.19 存在版本号正则 bug（`macos_version.rb` 只匹
 - `src/main/services/ApiService.ts`：`getAppUpdateInfo()` 回滚归一化逻辑（数据在 data 字段），日志增强输出 version/hasUrl
 - `src/main/services/UpgradeService.ts`：判定规则改为按 `downloadUrl` 非空，删除 `compareVersionHost` 版本号比较；接口失败降级为"已最新"不阻断启动
 - `src/renderer/stores/updateStore.ts`：`forceUpdate` 判断改 `== '1'` 兼容字符串；`update:not-available` 事件补设 `usual` 状态；清理未使用的 `compareVersion`/`APP_VERSION` import
-- `.env.production`：配置 `VITE_UPDATE_SERVER_URL=http://<更新服务IP>/index.php/Home/<接口前缀名>/getWebPgPrintUpdateInfo`
+- `.env.production`：配置 `VITE_UPDATE_SERVER_URL=http://<更新服务IP>/{接口前缀}/getWebPgPrintUpdateInfo`
 
 ## [1.0.2] - 2026-09-19
 

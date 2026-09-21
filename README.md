@@ -137,9 +137,7 @@ npm run rebuild
 
 ## 六、后端接口
 
-- 域名：`http://<生产域名>`
-- 接口前缀：`/index.php/Home/<接口前缀名>/`
-- 鉴权密钥：`secret`（值见 `src/main/config.ts` 的 `API_SECRET`）
+> ⚠️ 域名、接口前缀、鉴权密钥等敏感配置不对外公开，统一集中在 `src/main/config.ts`（或 `.env` 环境变量）中管理，部署时按内部环境配置填写，禁止写入公开文档。
 
 详见 [接口对接文档](docs/接口对接文档.md)。
 
